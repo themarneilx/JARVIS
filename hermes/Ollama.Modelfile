@@ -1,0 +1,2 @@
+FROM hf.co/HauhauCS/Qwen3.5-4B-Uncensored-HauhauCS-Aggressive:Q4_K_M
+PARAMETER num_ctx 64000

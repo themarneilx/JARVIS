@@ -1,0 +1,12 @@
+{
+  "name": "jarvis-local-workspace",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "hermes": "bash scripts/hermes.sh",
+    "test": "bash scripts/test.sh",
+    "build": "npm --prefix frontend run build",
+    "dev": "bash scripts/dev.sh",
+    "start": "bash scripts/start.sh"
+  }
+}

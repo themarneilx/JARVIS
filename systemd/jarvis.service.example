@@ -1,0 +1,18 @@
+# Optional user unit. Review paths and environment before installing. Not enabled by setup.
+[Unit]
+Description=J.A.R.V.I.S. local command center
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/new project marneilx/JARVIS
+ExecStart=/usr/bin/bash "%h/new project marneilx/JARVIS/scripts/start.sh" --no-browser --no-token
+Restart=on-failure
+RestartSec=10
+UMask=0077
+NoNewPrivileges=true
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=graphical-session.target

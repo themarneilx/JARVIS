@@ -1,0 +1,56 @@
+import { chromium } from '../frontend/node_modules/playwright-core/index.mjs';
+import { readFile, writeFile } from 'node:fs/promises';
+import assert from 'node:assert/strict';
+// Live public providers; synthetic microphone and local transcription fixture for UI lifecycle only.
+const root=process.cwd();
+const browser=await chromium.connectOverCDP('http://127.0.0.1:9223');
+const context=await browser.newContext({viewport:{width:1512,height:982}});const page=await context.newPage();
+const errors=[];let vectorResponses=0;
+page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error'&&!m.text().includes('401'))errors.push(m.text());});
+page.on('response',r=>{if(r.url().includes('tiles.openfreemap.org/planet/')&&r.ok())vectorResponses++;});
+await page.addInitScript(()=>{
+ if(!localStorage.getItem('jarvis.preferences.v3'))localStorage.setItem('jarvis.preferences.v3',JSON.stringify({voice:false,startupSound:false}));
+ navigator.mediaDevices.getUserMedia=async()=>{const c=new AudioContext();await c.resume();const d=c.createMediaStreamDestination();const o=c.createOscillator();const g=c.createGain();g.gain.value=.0001;o.connect(g).connect(d);o.start();return d.stream;};
+ const sample=AnalyserNode.prototype.getFloatTimeDomainData;
+ AnalyserNode.prototype.getFloatTimeDomainData=function(a){sample.call(this,a);if(window.__wakeLevel)a.fill(window.__wakeLevel);};
+});
+try{
+ await page.goto('http://127.0.0.1:8787');await page.getByLabel('Local pairing token').fill((await readFile(root+'/.runtime/login.token','utf8')).trim());await page.getByRole('button',{name:'Connect local session'}).click();await page.getByTestId('core-stage').waitFor();
+ const coreBefore=await page.getByTestId('core-stage').boundingBox();
+ await page.locator('.messages').evaluate(e=>{const long=document.createElement('div');long.textContent=('A long conversation entry. ').repeat(2500);e.append(long)});
+ const coreAfter=await page.getByTestId('core-stage').boundingBox();assert(Math.abs(coreBefore.y-coreAfter.y)<1);assert(Math.abs(coreBefore.height-coreAfter.height)<1);
+ assert(await page.locator('.messages').evaluate(e=>e.scrollHeight>e.clientHeight));
+ await page.getByRole('button',{name:'Map',exact:true}).click();await page.locator('.maplibregl-canvas').waitFor();
+ await page.waitForTimeout(4500);
+ const mapSize=await page.getByTestId('geographic-map').boundingBox();assert(mapSize.height>900);
+ await page.getByLabel('Place or destination',{exact:true}).fill('Mactan Cebu International Airport Philippines');await page.getByRole('button',{name:'Find place',exact:true}).click();
+ await page.locator('.map-coordinates').waitFor({timeout:30000});
+ const readPitch=()=>page.locator('.maplibregl-ctrl-compass span').evaluate(e=>Number(e.style.transform.match(/rotateX\(([-.0-9]+)deg\)/)?.[1]));
+ await page.waitForTimeout(500);const cameraStart=await readPitch();
+ await page.waitForTimeout(2200);const cameraMoving=await readPitch();assert(Math.abs(cameraMoving-cameraStart)>.2);
+ await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));});
+ await page.waitForTimeout(200);const cameraPaused=await readPitch();await page.waitForTimeout(700);assert(Math.abs((await readPitch())-cameraPaused)<.1);
+ await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:false});document.dispatchEvent(new Event('visibilitychange'));});
+ await page.waitForTimeout(6800);
+ await page.waitForFunction(()=>{const m=document.querySelector('.maplibregl-ctrl-compass span')?.getAttribute('style')?.match(/rotateX\(([-.0-9]+)deg\)/);return m && Math.min(Math.abs(Number(m[1])-55),Math.abs(Number(m[1])-47))<.1},null,{timeout:20000});
+ const pitch=await page.locator('.maplibregl-ctrl-compass span').getAttribute('style');assert(vectorResponses>0);
+ await page.screenshot({path:'/tmp/jarvis-3d-map-final.png'});
+ await page.getByRole('button',{name:'Switch to 2D map',exact:true}).click();await page.locator('.leaflet-container').waitFor();
+ await page.getByRole('button',{name:'Switch to 3D map',exact:true}).click();await page.locator('.maplibregl-canvas').waitFor();
+ await page.getByRole('button',{name:'Back to core',exact:true}).click();
+ await page.getByRole('button',{name:'News & markets',exact:true}).click();
+ await page.getByLabel('Topic or stock ticker',{exact:true}).fill('Cebu technology');await page.getByRole('button',{name:'Look up',exact:true}).click();await page.locator('.news-card').first().waitFor({timeout:30000});
+ const newsCount=await page.locator('.news-card').count();assert(newsCount>0);await page.locator('.news-title').first().click();await page.locator('.article-detail').waitFor();await page.screenshot({path:'/tmp/jarvis-news-final.png'});
+ await page.getByLabel('Information category',{exact:true}).selectOption('stocks');await page.getByLabel('Topic or stock ticker',{exact:true}).fill('NVDA');await page.getByRole('button',{name:'Look up',exact:true}).click();await page.locator('.stock-chart polyline').waitFor({timeout:30000});
+ const samples=(await page.locator('.stock-chart polyline').getAttribute('points')).split(' ').length;assert(samples>1);await page.screenshot({path:'/tmp/jarvis-stock-final.png'});
+ await page.getByRole('button',{name:'Back to core',exact:true}).click();await page.getByRole('button',{name:'Settings',exact:true}).click();
+ await page.getByRole('checkbox',{name:'Enable boot-up sound',exact:true}).check();await page.reload();await page.getByRole('button',{name:'Settings',exact:true}).click();assert(await page.getByRole('checkbox',{name:'Enable boot-up sound',exact:true}).isChecked());await page.getByRole('checkbox',{name:'Enable boot-up sound',exact:true}).uncheck();
+ await page.screenshot({path:'/tmp/jarvis-settings-final.png',fullPage:true});
+ await page.route('**/api/audio/transcribe',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({text:'Jarvis'})}));
+ await page.getByRole('checkbox',{name:'Enable “Hey Jarvis” / “Jarvis” listening',exact:true}).check();await page.waitForTimeout(2200);
+ await page.evaluate(()=>window.__wakeLevel=.08);await page.waitForTimeout(1000);await page.evaluate(()=>window.__wakeLevel=0);await page.locator('.attention-frame').waitFor({timeout:10000});
+ const wakeEdge=true;await page.screenshot({path:'/tmp/jarvis-wake-edge-final.png'});await page.getByRole('checkbox',{name:'Enable “Hey Jarvis” / “Jarvis” listening',exact:true}).uncheck();
+ await page.setViewportSize({width:390,height:844});await page.waitForTimeout(300);const settingsOverflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth);assert(!settingsOverflow);
+ await page.getByRole('button',{name:'Command center',exact:true}).click();const dashboardOverflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth);assert(!dashboardOverflow);
+ const result={coreStableWithLongHistory:true,mapSize,pitch,cameraStart,cameraMoving,cameraPaused,simulatedHiddenCameraResume:true,vectorResponses,newsCount,stockSamples:samples,wakeEdge,bootPreferencePersisted:true,settingsOverflow,dashboardOverflow,errors,wakeTranscriptionMocked:true,providersMocked:false};console.log(JSON.stringify(result,null,2));await writeFile(root+'/.runtime/views-browser-check.json',JSON.stringify(result,null,2));assert.equal(errors.length,0);
+}finally{await context.close();await browser.close();}

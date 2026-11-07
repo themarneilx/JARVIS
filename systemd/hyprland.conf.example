@@ -1,0 +1,6 @@
+# Review before adding to your own Hyprland config. Setup never edits it.
+# Import desktop session variables before starting the optional user service.
+exec-once = dbus-update-activation-environment --systemd WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE XDG_CURRENT_DESKTOP
+bind = SUPER SHIFT, J, exec, xdg-open http://127.0.0.1:8787
+# A global push-to-talk recording shortcut is not installed: browser permission and
+# focus remain required. Focus the in-app microphone button and hold Space for PTT.

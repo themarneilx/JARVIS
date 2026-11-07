@@ -1,0 +1,14 @@
+.env
+.venv/
+.runtime/
+node_modules/
+dist/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.tsbuildinfo
+playwright-report/
+test-results/
+hermes/runtime/
+resume.txt
+reference.mp4

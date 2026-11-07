@@ -1,0 +1,43 @@
+import assert from 'node:assert/strict';
+
+export async function checkTerminal(page,request,evidence) {
+  await page.getByRole('button',{name:'Settings',exact:true}).click();
+  const section=page.getByRole('heading',{name:'Desktop & terminal permissions'}).locator('..').locator('..');
+  const approval=section.getByLabel('Ask before opening apps or running saved terminal commands',{exact:true});
+  await approval.waitFor();
+  assert(await approval.isChecked());
+  await section.getByRole('button',{name:'Run fastfetch in Kitty',exact:true}).click();
+  const popup=page.locator('dialog[open]');
+  await popup.getByText(/Open Kitty and run exactly: fastfetch/).waitFor();
+  await popup.getByRole('button',{name:'Reject',exact:true}).click();
+  await popup.waitFor({state:'hidden'});
+  await approval.uncheck();
+  await section.getByText('Installed apps and exact saved commands can now launch without repeated approval.',{exact:true}).waitFor();
+  await page.reload();
+  await page.getByRole('button',{name:'Settings',exact:true}).click();
+  await approval.waitFor();
+  assert(!(await approval.isChecked()));
+  await section.getByRole('button',{name:'Run fastfetch in Kitty',exact:true}).click();
+  await section.getByText('Desktop mutations are disabled in this isolated QA process',{exact:true}).waitFor();
+  assert.equal(await popup.count(),0);
+  const actions=await request('/actions');
+  const latest=actions.find(row=>row.kind==='terminal');
+  assert.equal(latest.status,'failed');
+  assert.equal(JSON.parse(latest.result).authorization,'desktop_setting');
+  await section.getByLabel('Saved command name',{exact:true}).fill('QA show current folder');
+  await section.getByLabel('Exact command',{exact:true}).fill('pwd');
+  await section.getByRole('button',{name:'Save terminal command',exact:true}).click();
+  await section.getByRole('button',{name:'Run QA show current folder in Kitty',exact:true}).waitFor();
+  await section.getByRole('button',{name:'Remove saved command QA show current folder',exact:true}).click();
+  await section.getByRole('button',{name:'Run QA show current folder in Kitty',exact:true}).waitFor({state:'hidden'});
+  await approval.check();
+  await section.getByText('Desktop launch approval is required again.',{exact:true}).waitFor();
+  await section.getByLabel('Saved command name',{exact:true}).fill('QA invalid command');
+  await section.getByLabel('Exact command',{exact:true}).fill('sudo fastfetch');
+  await section.getByRole('button',{name:'Save terminal command',exact:true}).click();
+  await section.getByRole('alert').filter({hasText:'Privilege escalation'}).waitFor();
+  await page.setViewportSize({width:390,height:844});
+  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+  await page.screenshot({path:'/tmp/jarvis-terminal-settings.png',fullPage:true});
+  evidence.terminal={popupRequiredByDefault:true,rejectedWithoutExecution:true,browserPreauthorizationSurvivesReload:true,backendPolicyUsed:true,failedLaunchReported:true,exactCommandSavedAndRemoved:true,rootWrapperRefused:true,mobileOverflow:false,desktopExecution:'blocked in QA'};
+}

@@ -1,0 +1,20 @@
+name: jarvis_desktop
+version: 0.5.0
+description: Home-scoped files, installed applications, Linux diagnostics, sourced information and reviewed proposals
+provides_tools:
+  - jarvis_applications
+  - jarvis_launch_application
+  - jarvis_terminal_commands
+  - jarvis_run_terminal
+  - jarvis_home_files
+  - jarvis_online
+  - jarvis_telemetry
+  - jarvis_processes
+  - jarvis_journal
+  - jarvis_propose_action
+  - jarvis_memory_read
+  - jarvis_memory_propose
+  - jarvis_system_report_skill
+  - jarvis_shortcuts
+requires_env:
+  - JARVIS_PLUGIN_TOKEN

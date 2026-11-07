@@ -1,0 +1,36 @@
+# Generated runtime configuration uses a model discovered from Ollama, never this placeholder.
+model:
+  provider: custom
+  base_url: http://127.0.0.1:11434/v1
+  default: REPLACE_WITH_VERIFIED_OLLAMA_TAG
+  context_length: 64000
+  ollama_num_ctx: 64000
+platform_toolsets:
+  api_server: [jarvis_desktop, no_mcp]
+  cli: [jarvis_desktop, no_mcp]
+plugins:
+  enabled: [jarvis_desktop]
+  auto_update_check_hours: 0
+tools:
+  tool_search:
+    enabled: false
+memory:
+  memory_enabled: true
+  user_profile_enabled: true
+  memory_char_limit: 2200
+  user_char_limit: 1375
+  write_approval: true
+skills:
+  write_approval: true
+auxiliary:
+  background_review:
+    enabled: false
+fallback_providers: []
+gateway:
+  platforms:
+    api_server:
+      enabled: true
+      host: 127.0.0.1
+      port: 8642
+      max_concurrent_runs: 1
+      tool_progress_events: true
