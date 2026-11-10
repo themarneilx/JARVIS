@@ -28,6 +28,8 @@ class ShortcutRunner:
         self._desktop_task = None
         self._desktop_event = None
         self._process = None
+        self._cancel_subscribers = set()
+        self._browser_events = set()
         self._closed = False
         self.foreground_busy = lambda: False
 
@@ -57,6 +59,33 @@ class ShortcutRunner:
 
     def forget_client(self, owner):
         self._clients.pop(owner, None)
+
+    def subscribe(self):
+        queue = asyncio.Queue(maxsize=64)
+        self._cancel_subscribers.add(queue)
+        return queue
+
+    def unsubscribe(self, queue):
+        self._cancel_subscribers.discard(queue)
+
+    def publish_cancel(self, event_id):
+        notice = {'type': 'cancel', 'event_id': event_id}
+        for queue in tuple(self._cancel_subscribers):
+            if queue.full():
+                try:
+                    queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
+            try:
+                queue.put_nowait(notice)
+            except asyncio.QueueFull:
+                pass
+
+    def track_browser_event(self, event_id):
+        self._browser_events.add(event_id)
+
+    def forget_browser_event(self, event_id):
+        self._browser_events.discard(event_id)
 
     def capabilities(self):
         player = Path('/usr/bin/pw-play')
@@ -324,7 +353,7 @@ class ShortcutRunner:
             if not self._artifacts[identifier]:
                 self._artifacts.pop(identifier)
                 self._spoken.pop(identifier, None)
-        for identifier in list(self._preparing):
+        for identifier in list(set(self._preparing) | self._browser_events):
             if not self.store.valid_event(identifier):
                 await self.stop(identifier)
         if self._desktop_event is not None and not self.store.valid_event(self._desktop_event):
@@ -365,6 +394,8 @@ class ShortcutRunner:
             event = None
         if event is not None and event['status'] in ('pending', 'preparing', 'playing'):
             self.store.stop(event_id)
+        self.publish_cancel(event_id)
+        self.forget_browser_event(event_id)
         jobs = {self._preparing.get(event_id)}
         if self._desktop_event == event_id:
             jobs.add(self._desktop_task)
@@ -377,7 +408,7 @@ class ShortcutRunner:
         self._drop_audio(event_id)
 
     async def stop_invalidated(self):
-        identifiers = set(self._preparing) | set(self._artifacts)
+        identifiers = set(self._preparing) | set(self._artifacts) | self._browser_events
         if self._desktop_event is not None:
             identifiers.add(self._desktop_event)
         for identifier in identifiers:

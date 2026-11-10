@@ -702,3 +702,41 @@ with actual Hermes telemetry/history, one core canvas, no mobile overflow or
 application console errors. VAD/STT/chat in the targeted test are explicit fixtures;
 physical wake accuracy, speakers and RTX frame rate were not measured. No system
 configuration, speech environment or persistent startup change needs approval.
+
+## 2026-11-10 — Local Shortcuts and LAN access review
+
+Added authorized local alarms, battery warnings, manual announcements and daily
+weather briefings. The Shortcuts page reviews a strict schedule/action summary
+before saving, records bounded event history, and supports edits, disable, delete,
+run-now and stop. Hermes may list or propose a shortcut through its reviewed
+plugin; only the existing human approval flow enables that proposal. A one-second
+local scheduler does not invoke the model. Battery telemetry is sampled only while
+a battery routine exists, with sustained thresholds, re-arm hysteresis and event
+deduplication. Local speaker output is implemented through fixed `pw-play`
+arguments and the existing JarvisLuxTTS provider; the host must stay awake.
+
+Validation: `npm test` passed 304 backend and 116 frontend tests. `npm run build`
+passed. `npm test -- --browser` passed against the running local application,
+including genuine Hermes telemetry/history and responsive/mobile checks. A focused
+real-browser flow created a manual routine, recorded its muted run, and deleted it.
+`npm test -- --speech` produced a valid RIFF artifact through JarvisLuxTTS (103,468
+bytes, 1.077 seconds of audio; synthesis returned in approximately 0.665 seconds in
+this run). That checks synthesis, not speaker playback.
+
+Not exercised: a real scheduled alarm, a live low-battery transition, a weather
+announcement, microphone/STT capture, or desktop speakers. No claim of physical
+audio delivery or suspend wake is made. The browser QA used headless Chrome and
+software WebGL; it does not measure RTX performance.
+
+A fresh review identified two edge cases and both were fixed: active browser audio
+now receives an authenticated server cancellation event immediately after a
+shortcut change/stop, and terminal one-time alarm outcomes leave no misleading
+enabled-but-unscheduled entry. Regression tests were watched fail before fixes;
+the final backend and frontend suites pass. The 15-second browser-presence expiry
+is used when a paired tab closes without logging out.
+
+LAN note: the application remains loopback-only. `scripts/start.sh`, TrustedHost,
+and configured Origin validation require a separate HTTPS LAN design. The current
+browser cookie is not Secure because loopback HTTP is the only supported transport.
+Changing only Uvicorn's bind host would be incomplete and unsafe. No interface,
+firewall, router, TLS trust store, or service configuration was modified.

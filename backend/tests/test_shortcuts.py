@@ -89,7 +89,26 @@ def test_late_alarm_records_missed_instead_of_playing(store, clock):
     clock['now'] = saved['next_run']+301
     store.tick()
     assert store.events()[0]['status'] == 'missed'
+    assert store.get(saved['id'])['enabled'] is False
     with pytest.raises(ValueError): store.claim(store.events()[0]['id'], 'browser-a')
+
+
+def test_failed_or_cancelled_one_time_alarm_is_disarmed(store, clock):
+    failed = store.create(spec('once', time='07:00', name='Failed alarm'))
+    clock['now'] = failed['next_run']
+    store.tick()
+    event = store.events()[0]
+    claim = store.claim(event['id'], 'browser-a')
+    store.finish(event['id'], 'browser-a', claim['claim_id'], 'failed', 'Speech failed')
+    assert store.get(failed['id'])['enabled'] is False
+
+    clock['now'] += 1
+    cancelled = store.create(spec('once', time='07:00', name='Cancelled alarm'))
+    clock['now'] = cancelled['next_run']
+    store.tick()
+    event = next(item for item in store.events() if item['shortcut_id'] == cancelled['id'])
+    store.stop(event['id'])
+    assert store.get(cancelled['id'])['enabled'] is False
 
 
 def test_daily_does_not_replay_every_missed_day(store, clock):

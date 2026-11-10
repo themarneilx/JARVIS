@@ -146,7 +146,7 @@ Speech device selection and preparation require browser authentication, Origin a
 
 Local model output and tool output remain untrusted. Logs are bounded and common credential forms are redacted; redaction cannot detect every possible secret encoding. Do not ask the agent to copy credentials into ordinary memory. Pinned memories cannot be automatically edited; all application memory writes still require review. Native Hermes write approval remains enabled as an additional gate.
 
-Locking stops browser recording, STT requests, synthesis/playback and active chat before revoking the browser session. Scheduled routines can only collect local telemetry and require an explicit creation action; telemetry polling never grants permission to execute system changes.
+Locking stops browser recording, STT requests, synthesis/playback and active chat before revoking the browser session. Shortcuts are limited to local alarm, battery and announcement routines. Every browser-created routine requires an explicit authorization checkbox; native Hermes proposals remain pending until a human approves their exact review. The scheduler uses only measured local telemetry and the existing consent-checked weather provider. It cannot execute commands or system changes. It does not wake a suspended computer, install a timer/service, or enable persistent startup. Battery notifications use sustained threshold checks, hysteresis and occurrence deduplication; unknown or charging readings do not trigger them. Browser and desktop audio share a one-use event claim, and the desktop player uses fixed local audio paths/arguments. Desktop playback still requires the backend, awake host, and local audio service to be running.
 
 ## Immersive listening and maps
 

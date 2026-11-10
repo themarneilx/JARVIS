@@ -46,6 +46,19 @@ export function isShortcutAudioUrl(url: string): boolean {
   return /^\/api\/audio\/[a-f0-9]{48}$/.test(url);
 }
 
+export function applyShortcutCancellation(data: string, activeEventId: string, stop: () => void): boolean {
+  try {
+    const value: unknown = JSON.parse(data);
+    if (!value || typeof value !== "object") return false;
+    const notice = value as { type?: unknown; event_id?: unknown };
+    if (notice.type !== "cancel" || notice.event_id !== activeEventId) return false;
+    stop();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function playClaimedShortcut(options: {
   event: ShortcutEvent;
   claimId: string;

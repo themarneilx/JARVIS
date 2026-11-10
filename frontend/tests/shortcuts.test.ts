@@ -1,5 +1,5 @@
 import { expect, test, vi } from "vitest";
-import { isShortcutAudioUrl, newShortcut, playClaimedShortcut, shortcutReview, shortcutTemplate } from "../src/services/shortcuts";
+import { applyShortcutCancellation, isShortcutAudioUrl, newShortcut, playClaimedShortcut, shortcutReview, shortcutTemplate } from "../src/services/shortcuts";
 import type { ShortcutEvent } from "../src/services/types";
 
 const event: ShortcutEvent = {
@@ -84,4 +84,14 @@ test("artifacts remain authenticated same-origin opaque audio URLs", async () =>
     expect(options.play).not.toHaveBeenCalled();
     expect(options.finish).not.toHaveBeenCalled();
   }
+});
+
+test("cancellation notices stop only the matching active shortcut", () => {
+  const stop = vi.fn();
+  expect(applyShortcutCancellation('{"type":"cancel","event_id":"event"}', "event", stop)).toBe(true);
+  expect(stop).toHaveBeenCalledOnce();
+  expect(applyShortcutCancellation('{"type":"cancel","event_id":"other"}', "event", stop)).toBe(false);
+  expect(applyShortcutCancellation('{"type":"complete","event_id":"event"}', "event", stop)).toBe(false);
+  expect(applyShortcutCancellation('not json', "event", stop)).toBe(false);
+  expect(stop).toHaveBeenCalledOnce();
 });

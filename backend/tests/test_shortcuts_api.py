@@ -44,6 +44,7 @@ async def test_browser_credentials_and_explicit_authorization_required(client, a
     anonymous = AsyncClient(transport=ASGITransport(app=app), base_url='http://127.0.0.1:8787')
     async with anonymous:
         assert (await anonymous.get('/api/shortcuts')).status_code == 401
+        assert (await anonymous.get('/api/shortcuts/stream')).status_code == 401
         assert (await anonymous.post('/api/shortcuts', json={'spec': spec(), 'authorized': True}, headers=auth)).status_code == 401
     assert (await client.post('/api/shortcuts', json={'spec': spec(), 'authorized': True})).status_code == 403
     assert (await client.post('/api/shortcuts', json={'spec': spec(), 'authorized': False}, headers=auth)).status_code == 403
@@ -127,3 +128,25 @@ async def test_logout_cancels_only_its_claimed_browser_event(client, auth, app):
     assert (await client.post('/api/auth/logout', json={}, headers=auth)).status_code == 200
     assert app.state.shortcuts.event(event['id'])['status'] == 'cancelled'
     assert app.state.shortcuts.get(saved['id'])['enabled'] is True
+
+
+async def test_shortcut_stream_notifies_connected_tabs_of_cancellation(client, auth, app):
+    from starlette.requests import Request
+    route = next(route for group in app.routes for route in getattr(getattr(group, 'original_router', None), 'routes', [])
+                 if getattr(route, 'path', '') == '/api/shortcuts/stream')
+    async def receive(): return {'type': 'http.request', 'body': b'', 'more_body': False}
+    request = Request({'type': 'http', 'asgi': {'version': '3.0', 'spec_version': '2.3'}, 'http_version': '1.1',
+                       'method': 'GET', 'scheme': 'http', 'path': '/api/shortcuts/stream', 'raw_path': b'/api/shortcuts/stream',
+                       'query_string': b'', 'headers': [], 'server': ('127.0.0.1', 8787), 'client': ('127.0.0.1', 1234)}, receive)
+    response = await route.endpoint(request)
+    stream = response.body_iterator
+    try:
+        ready = await anext(stream)
+        assert 'ready' in (ready.decode() if isinstance(ready, bytes) else ready)
+        app.state.shortcut_runner.publish_cancel('event-from-another-tab')
+        notice = await anext(stream)
+        notice = notice.decode() if isinstance(notice, bytes) else notice
+        assert '"type":"cancel"' in notice
+        assert '"event_id":"event-from-another-tab"' in notice
+    finally:
+        await stream.aclose()

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, post } from "../services/api";
-import { playClaimedShortcut } from "../services/shortcuts";
+import { applyShortcutCancellation, playClaimedShortcut } from "../services/shortcuts";
 import type { ShortcutEvent } from "../services/types";
 
 type Options = {
@@ -147,6 +147,19 @@ export function useShortcutEvents(options: Options) {
   useEffect(() => {
     if (!options.authenticated) return;
     mounted.current = true;
+    const stream = new EventSource('/api/shortcuts/stream');
+    stream.onmessage = event => {
+      const current = active.current;
+      if (!current) return;
+      applyShortcutCancellation(event.data, current.event.id, () => {
+        generation.current++;
+        void latest.current.stopPlayback();
+        setAnnouncement(value => value?.id === current.event.id
+          ? { ...value, status: 'cancelled', error: 'Stopped in another shortcut panel.' }
+          : value);
+        release();
+      });
+    };
     let polling = false, heartbeating = false;
     const poll = async () => {
       if (polling) return;
@@ -168,6 +181,7 @@ export function useShortcutEvents(options: Options) {
     document.addEventListener("visibilitychange", visibility);
     return () => {
       mounted.current = false;
+      stream.close();
       generation.current++;
       clearInterval(eventsTimer);
       clearInterval(clientTimer);
@@ -181,9 +195,10 @@ export function useShortcutEvents(options: Options) {
         void latest.current.stopPlayback();
         void api(`/shortcuts/events/${current.event.id}/stop`, { method: "POST", body: "{}", keepalive: true }).catch(() => {});
       }
-      void api("/shortcuts/client", { method: "POST", body: JSON.stringify({ available: false, voice_enabled: latest.current.voiceEnabled, busy: false }), keepalive: true }).catch(() => {});
+      // Offline browser heartbeats expire after 15 seconds; logout also clears the
+      // session directly. Avoid racing an unauthenticated heartbeat against logout.
     };
-  }, [options.authenticated, refresh, heartbeat]);
+  }, [options.authenticated, refresh, heartbeat, release]);
 
   useEffect(() => {
     if (options.authenticated) void heartbeat().catch(() => {});

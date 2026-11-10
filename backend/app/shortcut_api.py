@@ -2,9 +2,11 @@
 import asyncio
 from contextlib import suppress
 import hashlib
+import json
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 from .shortcuts import ShortcutSpec
@@ -119,6 +121,23 @@ def shortcut_routes(store, runner, information):
     async def events():
         return {'events': store.events()}
 
+    @router.get('/shortcuts/stream')
+    async def cancellation_stream(request: Request):
+        queue = runner.subscribe()
+        async def stream():
+            try:
+                yield ': ready\n\n'
+                while not await request.is_disconnected():
+                    try:
+                        notice = await asyncio.wait_for(queue.get(), timeout=12)
+                    except TimeoutError:
+                        yield ': keepalive\n\n'
+                        continue
+                    yield 'data: ' + json.dumps(notice, separators=(',', ':')) + '\n\n'
+            finally:
+                runner.unsubscribe(queue)
+        return StreamingResponse(stream(), media_type='text/event-stream', headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
+
     @router.post('/shortcuts/client')
     async def heartbeat(body: Client, request: Request):
         return runner.heartbeat(owner(request), body.available, body.voice_enabled, body.busy)
@@ -128,7 +147,9 @@ def shortcut_routes(store, runner, information):
         if store.event(identifier)['delivery'] == 'desktop': raise HTTPException(403, 'This announcement is assigned to desktop playback')
         if runner.desktop_active: raise HTTPException(409, 'A desktop announcement is already in progress')
         if runner.foreground_busy() or runner.other_client_busy(owner(request)): raise HTTPException(409, 'Wait for foreground speech or the agent turn before playing an announcement')
-        return store.claim(identifier, owner(request))
+        result = store.claim(identifier, owner(request))
+        runner.track_browser_event(identifier)
+        return result
 
     @router.post('/shortcuts/events/{identifier}/audio')
     async def prepare(identifier: str, body: Audio, request: Request):
@@ -151,7 +172,9 @@ def shortcut_routes(store, runner, information):
 
     @router.post('/shortcuts/events/{identifier}/finish')
     async def finish(identifier: str, body: Finish, request: Request):
-        return store.finish(identifier, owner(request), body.claim_id, body.status, body.error)
+        result = store.finish(identifier, owner(request), body.claim_id, body.status, body.error)
+        runner.forget_browser_event(identifier)
+        return result
 
     @router.post('/shortcuts/events/{identifier}/stop')
     async def stop(identifier: str):

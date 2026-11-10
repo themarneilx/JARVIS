@@ -294,6 +294,14 @@ class Shortcuts:
         db.execute('UPDATE shortcuts SET last_run=? WHERE id=?', (now, row['id']))
         return db.execute('SELECT * FROM shortcut_events WHERE shortcut_id=? AND revision=? AND occurrence=?', (row['id'], row['revision'], occurrence)).fetchone()
 
+    @staticmethod
+    def _disarm_once(db, event):
+        if event is None or event['manual']:
+            return
+        spec = ShortcutSpec.model_validate(json.loads(event['payload'])['spec'])
+        if spec.trigger == 'once':
+            db.execute('UPDATE shortcuts SET enabled=0 WHERE id=? AND revision=?', (event['shortcut_id'], event['revision']))
+
     def run(self, identifier, now=None):
         now = time.time() if now is None else now
         with self.db() as db:
@@ -310,12 +318,20 @@ class Shortcuts:
         measured = type(percent) in (int, float) and math.isfinite(percent) and 0 <= percent <= 100
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
-            db.execute("UPDATE shortcut_events SET status='missed',error='No audio delivery was available within five minutes' WHERE status='pending' AND due<?", (now-300,))
-            db.execute("UPDATE shortcut_events SET status='failed',error='Audio delivery was interrupted; replay manually if needed' WHERE status IN ('preparing','playing') AND claim_until<?", (now,))
+            expired = db.execute("SELECT * FROM shortcut_events WHERE status='pending' AND due<?", (now-300,)).fetchall()
+            for event in expired:
+                db.execute("UPDATE shortcut_events SET status='missed',error='No audio delivery was available within five minutes' WHERE id=?", (event['id'],))
+                self._disarm_once(db, event)
+            interrupted = db.execute("SELECT * FROM shortcut_events WHERE status IN ('preparing','playing') AND claim_until<?", (now,)).fetchall()
+            for event in interrupted:
+                db.execute("UPDATE shortcut_events SET status='failed',error='Audio delivery was interrupted; replay manually if needed' WHERE id=?", (event['id'],))
+                self._disarm_once(db, event)
             for row in db.execute('SELECT * FROM shortcuts WHERE enabled=1').fetchall():
                 spec = ShortcutSpec.model_validate_json(row['spec'])
                 if spec.trigger in ('once', 'daily') and row['next_run'] is not None and row['next_run'] <= now:
-                    self._enqueue(db, row, 'time:'+str(int(row['next_run'])), row['next_run'], {}, now)
+                    event = self._enqueue(db, row, 'time:'+str(int(row['next_run'])), row['next_run'], {}, now)
+                    if event['status'] == 'missed':
+                        self._disarm_once(db, event)
                     next_run = next_daily(spec, now) if spec.trigger == 'daily' else None
                     db.execute('UPDATE shortcuts SET next_run=? WHERE id=?', (next_run, row['id']))
                 elif spec.trigger == 'battery':
@@ -395,12 +411,14 @@ class Shortcuts:
             row = self._claimed(db, identifier, owner, claim_id)
             db.execute('UPDATE shortcut_events SET status=?,error=CASE WHEN ?!=\'\' THEN ? ELSE error END WHERE id=?', (status, str(error)[:500], str(error)[:500], identifier))
             spec = ShortcutSpec.model_validate(json.loads(row['payload'])['spec'])
-            if status in ('delivered', 'muted') and spec.trigger == 'once' and not row['manual']:
+            if status in ('delivered', 'muted', 'failed', 'cancelled') and spec.trigger == 'once' and not row['manual']:
                 db.execute('UPDATE shortcuts SET enabled=0 WHERE id=? AND revision=?', (row['shortcut_id'], row['revision']))
             if status == 'failed': db.execute('UPDATE shortcuts SET last_error=? WHERE id=?', (str(error)[:500], row['shortcut_id']))
         return self.event(identifier)
 
     def stop(self, identifier):
         with self.db() as db:
+            event = db.execute('SELECT * FROM shortcut_events WHERE id=?', (identifier,)).fetchone()
             db.execute("UPDATE shortcut_events SET status='cancelled',error='Stopped by the user' WHERE id=? AND status IN ('pending','preparing','playing')", (identifier,))
+            self._disarm_once(db, event)
         return self.event(identifier)

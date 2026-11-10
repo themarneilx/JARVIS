@@ -655,6 +655,26 @@ def test_stop_invalidated_removes_owned_audio_without_rewriting_history(tmp_path
     asyncio.run(run())
 
 
+def test_invalidated_browser_audio_publishes_cancellation_to_other_tabs(tmp_path):
+    async def run():
+        from app.shortcut_delivery import ShortcutRunner
+        store, tts, info = DeliveryStore(), FixtureTTS(tmp_path), information_fixture(tmp_path)
+        runner = ShortcutRunner(store, tts, info)
+        listener = runner.subscribe()
+        claim = store.claim('event', 'browser-a')
+        try:
+            await runner.prepare('event', 'browser-a', claim['claim_id'])
+            store.stop('event')
+            await runner.stop_invalidated()
+            assert await asyncio.wait_for(listener.get(), timeout=.1) == {'type': 'cancel', 'event_id': 'event'}
+            assert not tts.artifacts and not list(tmp_path.glob('*.wav'))
+        finally:
+            runner.unsubscribe(listener)
+            await runner.close()
+            await info.close()
+    asyncio.run(run())
+
+
 @pytest.mark.parametrize('voice', [True, False])
 def test_prepared_claim_cannot_synthesize_twice(tmp_path, voice):
     async def run():

@@ -68,6 +68,37 @@ The installed package manager records the current immutable dependency generatio
 
 Ollama 0.30.0 ignores the native Hermes extra_body.options.num_ctx override on its OpenAI-compatible endpoint. The original model actually loaded 4096 context and truncated the user message after large tool results. With explicit user approval, a separate jarvis-qwen35-4b-64k:latest tag was created with PARAMETER num_ctx 64000, sharing the original weight layers. Both model context pins remain 64000, but preflight also checks the real model's explicit default via /api/show with a separate client that never receives the Hermes bearer key. A genuine two-tool completion verified /api/ps allocation at 64000. No Ollama service configuration was modified.
 
+## Shortcuts
+
+The browser's Shortcuts panel authors bounded local routines: one-time alarms,
+daily alarms on selected weekdays, manual announcements, and battery threshold
+warnings. Browser creation requires an explicit authorization checkbox. Hermes
+uses the reviewed `jarvis_shortcuts` plugin to submit a proposal into the existing
+human review popup; that tool can list and propose, but cannot approve or enable
+its own proposal. Templates are only form defaults until the user authorizes them.
+
+A private SQLite store pins the validated schedule, timezone, revision and event
+occurrence key. A lightweight backend task checks time schedules once per second
+and samples battery telemetry every ten seconds only when an enabled battery
+shortcut exists. Low battery must be measured while discharging and remain below
+threshold for ten seconds; charging or a five-point recovery re-arms the warning.
+This scheduler uses no LLM inference. Timezone-aware calculations reject local
+times skipped by daylight-saving transitions, and event keys prevent a consumed
+alarm from replaying after restart. Alarms more than five minutes late are marked
+missed. History and active-event claims are bounded and persisted.
+
+At delivery, the worker resolves only supported placeholders and optionally
+fetches saved-city weather through the existing permission-checked information
+service. The existing JarvisLuxTTS synthesizer produces voice; a short generated
+chime is used only when selected. An available paired browser is preferred in
+auto mode; otherwise fixed-argument `pw-play` sends the prepared local artifact
+to desktop speakers using a filtered desktop session environment. Browser and
+desktop event claims are mutually exclusive. Stop, edit, disable, deletion,
+logout, audio failures and weather failures are reflected in event history. The
+backend and awake laptop must be running; this is not a firmware or suspend-wake
+alarm. No OS timer, systemd unit, command runner, public callback or startup task
+is created.
+
 ## Terminal commands and desktop policy
 
 `DesktopAccess` owns private desktop.db command recipes and the browser's

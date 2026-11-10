@@ -80,21 +80,23 @@ and effect containing announcement/delivery/weather details.
 
 ## Tasks
 
-- [ ] Shortcut store: strict validation, timezone handling, deduplicated proposals,
+- [x] Shortcut store: strict validation, timezone handling, deduplicated proposals,
   optimistic edits, scheduler occurrence keys, missed-alarm grace, battery latch,
   claims, durable event history, cancellation and bounded retention.
-- [ ] Runner: render placeholders, actual saved-city weather with explicit failure,
+- [x] Runner: render placeholders, actual saved-city weather with explicit failure,
   serialize selected JarvisLuxTTS/chime audio, fixed PipeWire playback, auto routing,
   stop and cleanup. Reuse the existing TTS worker/artifact registry.
-- [ ] API/approval: integrate scheduler lifecycle, browser routes and native proposal
+- [x] API/approval: integrate scheduler lifecycle, browser routes and native proposal
   boundary. Existing model authorization remains separate from browser approvals.
-- [ ] Frontend: Shortcuts navigation, templates/builder, exact review, enable/edit/
+- [x] Frontend: Shortcuts navigation, templates/builder, exact review, enable/edit/
   delete/run controls, run history and event announcement banner/queue. Play through
   the existing voice player/analyser so browser output drives the 3D core.
-- [ ] Hermes: native tool, verified feedback/history, explicit timezone/current-time
+- [x] Hermes: native tool, verified feedback/history, explicit timezone/current-time
   context for alarm requests, plugin/schema fixtures and dedicated profile sync.
-- [ ] Verification: unit/security fixtures, browser lifecycle, real native proposal,
-  selected Jarvis voice and local playback where available, documentation and commits.
+- [x] Verification: backend/frontend/security suites, real-browser shortcut lifecycle,
+  real JarvisLuxTTS synthesis, and documentation completed. Actual timed delivery,
+  live weather announcement, dedicated desktop speaker playback, and a Hermes model
+  proposal/approval round trip remain unverified on this machine.
 
 ## Review focus
 
