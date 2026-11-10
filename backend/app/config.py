@@ -4,6 +4,8 @@ import os
 import secrets
 from urllib.parse import urlparse
 
+from .lan import normalize_private_ipv4
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -49,6 +51,11 @@ class Settings:
     stt_model: str = field(default_factory=lambda: os.getenv('JARVIS_STT_MODEL',''))
     stt_library: str = field(default_factory=lambda: os.getenv('JARVIS_STT_LIBRARY',str(ROOT / '.runtime/stt/nemo-speech-0.3.0-cpu/lib/libnemo_speech_asr_c.so')))
     port: int = field(default_factory=lambda: int(os.getenv('JARVIS_PORT','8787')))
+    lan_mode: bool = field(default_factory=lambda: os.getenv('JARVIS_LAN_MODE') == '1')
+    lan_host: str = field(default_factory=lambda: os.getenv('JARVIS_LAN_HOST', ''))
+    lan_ca_cert: Path | None = field(default_factory=lambda: Path(os.environ['JARVIS_LAN_CA_CERT']) if os.getenv('JARVIS_LAN_CA_CERT') else None)
+    lan_certfile: Path | None = field(default_factory=lambda: Path(os.environ['JARVIS_LAN_CERT']) if os.getenv('JARVIS_LAN_CERT') else None)
+    lan_keyfile: Path | None = field(default_factory=lambda: Path(os.environ['JARVIS_LAN_KEY']) if os.getenv('JARVIS_LAN_KEY') else None)
 
     def __post_init__(self):
         if self.stt_provider not in ('parakeet','faster-whisper'):
@@ -61,8 +68,13 @@ class Settings:
             raise ValueError('JARVIS_TTS_SPEED must be between 0.4 and 1.2')
         self.hermes_url = loopback_url(self.hermes_url)
         self.ollama_url = loopback_url(self.ollama_url)
-        for origin in self.origins:
-            loopback_url(origin)
+        if self.lan_mode:
+            self.lan_host = normalize_private_ipv4(self.lan_host)
+            self.origins = (self.lan_origin,)
+        else:
+            self.lan_host = ''
+            for origin in self.origins:
+                loopback_url(origin)
         if self.state_dir.resolve() in (Path.home().resolve(),Path('/tmp'),ROOT):
             raise ValueError('Choose a dedicated private application state subdirectory')
         self.state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -73,3 +85,19 @@ class Settings:
             key_file = self.state_dir / 'hermes.token'
             if key_file.exists():
                 self.hermes_key = key_file.read_text().strip()
+
+    @property
+    def lan_origin(self) -> str:
+        return f'https://{self.lan_host}:{self.port}'
+
+    @property
+    def bind_host(self) -> str:
+        return self.lan_host if self.lan_mode else '127.0.0.1'
+
+    @property
+    def allowed_hosts(self) -> tuple[str, ...]:
+        return (self.lan_host,) if self.lan_mode else ('127.0.0.1', 'localhost', '[::1]')
+
+    @property
+    def secure_cookie(self) -> bool:
+        return self.lan_mode

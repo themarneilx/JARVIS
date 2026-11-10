@@ -251,7 +251,7 @@ def create_app(settings=None, hermes=None, memory_bridge=None):
     app.state.shortcuts=shortcuts
     app.state.shortcut_runner=shortcut_runner
     app.include_router(shortcut_routes(shortcuts,shortcut_runner,information))
-    app.add_middleware(TrustedHostMiddleware,allowed_hosts=['127.0.0.1','localhost','[::1]'])
+    app.add_middleware(TrustedHostMiddleware,allowed_hosts=list(settings.allowed_hosts))
 
     @app.middleware('http')
     async def boundary(request,call_next):
@@ -289,6 +289,8 @@ def create_app(settings=None, hermes=None, memory_bridge=None):
         response=await call_next(request)
         response.headers['X-Content-Type-Options']='nosniff'
         response.headers['Referrer-Policy']='no-referrer'
+        if settings.lan_mode:
+            response.headers['Strict-Transport-Security']='max-age=86400'
         response.headers['Cache-Control']='no-store' if request.url.path.startswith('/api/') else 'no-cache'
         response.headers['Content-Security-Policy']="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://tile.openstreetmap.org; media-src 'self' blob:; connect-src 'self' https://tiles.openfreemap.org; worker-src 'self' blob:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'"
         response.headers['Permissions-Policy']='camera=(), geolocation=(), microphone=(self)'
@@ -319,7 +321,7 @@ def create_app(settings=None, hermes=None, memory_bridge=None):
         raw=secrets.token_urlsafe(40); csrf=secrets.token_urlsafe(32)
         sessions[hashlib.sha256(raw.encode()).hexdigest()]={'csrf':csrf,'expires':now+43200}
         response=JSONResponse({'csrf':csrf})
-        response.set_cookie('jarvis_session',raw,httponly=True,samesite='strict',max_age=43200,secure=False,path='/')
+        response.set_cookie('jarvis_session',raw,httponly=True,samesite='strict',max_age=43200,secure=settings.secure_cookie,path='/')
         return response
 
     @app.get('/api/auth/session')

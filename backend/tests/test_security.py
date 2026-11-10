@@ -55,6 +55,18 @@ async def test_bad_host(app):
     async with AsyncClient(transport=ASGITransport(app=app), base_url='http://evil.example') as client:
         assert (await client.get('/api/health')).status_code == 400
 
+async def test_lan_host_and_origin_are_exact_and_cookie_is_secure(tmp_path):
+    settings = Settings(state_dir=tmp_path, login_token='l'*40, lan_mode=True, lan_host='192.168.40.25')
+    app = create_app(settings)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='https://192.168.40.25:8787') as client:
+        accepted = await client.post('/api/auth/login', json={'token':'l'*40}, headers={'origin':'https://192.168.40.25:8787'})
+        assert accepted.status_code == 200
+        assert accepted.headers['set-cookie'].lower().find('secure') >= 0
+        rejected = await client.post('/api/auth/login', json={'token':'l'*40}, headers={'origin':'https://192.168.40.26:8787'})
+        assert rejected.status_code == 403
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='https://evil.example') as client:
+        assert (await client.get('/api/health')).status_code == 400
+
 async def test_csrf_required(client, auth):
     assert (await client.post('/api/information/settings',json={'enabled':True})).status_code==403
     assert (await client.post('/api/information/settings',json={'enabled':True},headers={'authorization':'Bearer '+'p'*40})).status_code==403

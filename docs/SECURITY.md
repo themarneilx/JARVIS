@@ -35,7 +35,7 @@ be selected. Preparation creates a deterministic separate tag through structured
 Ollama API JSON; it cannot execute a shell, download weights or change service
 configuration. Switching/preparing is refused while an agent turn is active.
 
-Only loopback endpoints are supported. There is no public proxy, cloud AI fallback, remote browser access, analytics exporter, or persistent startup enabled by setup.
+Loopback remains the default. An explicit `npm start -- --lan --lan-host <private-ip>` mode can serve the browser app over HTTPS on one assigned RFC1918 IPv4 address. It creates a local CA and IP-bound server certificate under ignored `.runtime/certs`, requires that CA to be trusted on each remote browser device, validates the exact IP Host and HTTPS Origin, and marks the session cookie Secure. It does not bind a wildcard, change firewall rules, expose Hermes/Ollama, or configure router port forwarding. The local CA private key must remain on this PC. Vite development mode is not available in LAN mode. There is no public proxy, cloud AI fallback, analytics exporter, or persistent startup enabled by setup.
 
 Internet information is an explicit read capability, independent of local model
 inference. New profiles disable it until browser consent. Browser Origin/session/
@@ -56,9 +56,7 @@ source links open HTTPS pages with noopener/noreferrer; images/raw HTML remain
 suppressed. Stock data is an unofficial last-trade feed and FX is daily reference
 data, not execution/trading functionality. Provider failures fail explicitly.
 
-Pair a browser using a randomly generated private local token. The backend sets an HttpOnly, SameSite=Strict session cookie (12-hour lifetime, revoked on app restart or logout). This HTTP cookie is intentionally not Secure because the supported transport is loopback HTTP. Remote use needs a separate encrypted/authenticated design and is outside this deployment.
-
-State-changing browser requests require an exact allowed Origin, a valid session and its CSRF token. Host checks reject DNS rebinding. Request sizes, audio signatures/duration, structured arguments and exact service allowlists are independently validated. External Markdown images and raw HTML are suppressed. Backend errors do not return upstream authentication material. Browser bundles contain no Hermes bearer or plugin credential.
+Pair a browser using a randomly generated private local token. The backend sets an HttpOnly, SameSite=Strict session cookie (12-hour lifetime, revoked on app restart or logout). The cookie is Secure in HTTPS LAN mode and not Secure only in the default loopback HTTP mode. State-changing browser requests require an exact allowed Origin, a valid session and its CSRF token. Host checks reject DNS rebinding. Request sizes, audio signatures/duration, structured arguments and exact service allowlists are independently validated. External Markdown images and raw HTML are suppressed. Backend errors do not return upstream authentication material. Browser bundles contain no Hermes bearer or plugin credential.
 
 The plugin credential can only access `/api/internal` diagnostics/request endpoints.
 Browser credentials cannot be replaced with that bearer. The model cannot resolve

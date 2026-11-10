@@ -1,9 +1,11 @@
 """Foreground supervisor for the dedicated local Hermes and browser command center."""
 import argparse
 import asyncio
+import hashlib
 import os
 from pathlib import Path
 import signal
+import socket
 import subprocess
 import sys
 import threading
@@ -14,10 +16,52 @@ import httpx
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'backend'))
 from app.config import Settings
+from app.lan import ensure_lan_certificate, validate_lan_host, validate_start_options
 from app.hermes import HermesClient, HermesError
 from app.runtime import discover_runtime, profile_home
 from app.process_control import stop_recorded as stop_project_process
 from app.models import ModelManager
+
+
+def build_parser():
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--no-browser',action='store_true')
+    parser.add_argument('--no-token',action='store_true',help='Hide the pairing token in automated checks')
+    parser.add_argument('--stop',action='store_true',help='Stop only recorded project processes')
+    parser.add_argument('--dev',action='store_true')
+    parser.add_argument('--lan',action='store_true',help='Serve over HTTPS on one private LAN address')
+    parser.add_argument('--lan-host',default='',help='This PC’s assigned private IPv4 address for --lan')
+    return parser
+
+
+def configure_lan(args,environ=None,state_dir=None):
+    environ=os.environ if environ is None else environ
+    state_dir=Path(state_dir or ROOT/'.runtime')
+    host=validate_start_options(args.lan,args.lan_host,args.dev)
+    keys=('JARVIS_LAN_MODE','JARVIS_LAN_HOST','JARVIS_LAN_CA_CERT','JARVIS_LAN_CERT','JARVIS_LAN_KEY')
+    if host is None:
+        for key in keys:environ.pop(key,None)
+        return None
+    host=validate_lan_host(host)
+    ca_cert,cert,key=ensure_lan_certificate(host,state_dir)
+    environ.update({
+        'JARVIS_LAN_MODE':'1', 'JARVIS_LAN_HOST':host,
+        'JARVIS_LAN_CA_CERT':str(ca_cert), 'JARVIS_LAN_CERT':str(cert), 'JARVIS_LAN_KEY':str(key),
+    })
+    return host,ca_cert,cert,key
+
+
+def backend_command(settings):
+    command=['bash','scripts/start.sh','--backend']
+    if settings.lan_mode:
+        command.extend(['--lan-host',settings.lan_host,'--tls-cert',str(settings.lan_certfile),'--tls-key',str(settings.lan_keyfile)])
+    return command
+
+
+def port_open(host,port):
+    try:
+        with socket.create_connection((host,port),timeout=0.2):return True
+    except OSError:return False
 
 
 def stop_recorded(name):
@@ -35,19 +79,17 @@ async def preflight(settings):
 
 
 def main():
-    parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--no-browser',action='store_true')
-    parser.add_argument('--no-token',action='store_true',help='Hide the pairing token in automated checks')
-    parser.add_argument('--stop',action='store_true',help='Stop only recorded project processes')
-    parser.add_argument('--dev',action='store_true')
-    args=parser.parse_args()
+    args=build_parser().parse_args()
     profile_home(ROOT,os.getenv('HERMES_HOME'))
     if args.stop:
         for name in ('backend','hermes'):stop_recorded(name)
         return
+    configure_lan(args)
     settings=Settings()
+    if settings.lan_mode and not all((settings.lan_ca_cert,settings.lan_certfile,settings.lan_keyfile)):
+        raise ValueError('LAN HTTPS certificate material is incomplete; rerun with --lan')
     runtime=discover_runtime(ROOT)
-    base=f'http://127.0.0.1:{settings.port}'
+    base=settings.lan_origin if settings.lan_mode else f'http://127.0.0.1:{settings.port}'
     stopped=threading.Event()
     children=[]
     logs=[]
@@ -69,12 +111,10 @@ def main():
         if stopped.is_set():raise KeyboardInterrupt
 
     try:
-        with httpx.Client(trust_env=False,timeout=1) as probe:
-            try:
-                probe.get(base+'/api/health')
-            except httpx.ConnectError:
-                pass
-            else:
+        with httpx.Client(trust_env=False,timeout=1,verify=str(settings.lan_ca_cert) if settings.lan_mode else True) as probe:
+            addresses={settings.bind_host}
+            if settings.lan_mode:addresses.add('127.0.0.1')
+            if any(port_open(host,settings.port) for host in addresses):
                 raise RuntimeError('Application port is already occupied. Stop the project with npm start -- --stop before relaunching.')
             try:
                 probe.get(settings.hermes_url+'/v1/capabilities')
@@ -97,7 +137,7 @@ def main():
                 subprocess.run(['npm','run','build'],cwd=ROOT,check=True)
             print('Starting the browser command center…',flush=True)
             if args.dev:os.environ['JARVIS_DEV_MODE']='1'
-            launch('backend',['bash','scripts/start.sh','--backend'])
+            launch('backend',backend_command(settings))
             deadline=time.monotonic()+30
             while True:
                 alive()
@@ -120,6 +160,12 @@ def main():
                     if time.monotonic()>deadline:raise RuntimeError('Vite startup timed out')
                     stopped.wait(0.25)
         print(f'\nJ.A.R.V.I.S. is ready: {url}',flush=True)
+        if settings.lan_mode:
+            fingerprint=hashlib.sha256(settings.lan_ca_cert.read_bytes()).hexdigest().upper()
+            fingerprint=':'.join(fingerprint[i:i+2] for i in range(0,len(fingerprint),2))
+            print(f'Trust this CA certificate on the remote device: {settings.lan_ca_cert}',flush=True)
+            print(f'CA SHA-256 fingerprint: {fingerprint}',flush=True)
+            print('Keep lan-ca.key on this PC. No firewall rules were changed.',flush=True)
         if not args.no_token:print(f'Local pairing token: {settings.login_token}',flush=True)
         print('Paste the token into the browser once. Ctrl+C stops the processes started here.',flush=True)
         print(f'Private logs: {directory}\n',flush=True)

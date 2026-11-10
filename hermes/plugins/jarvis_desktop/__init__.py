@@ -2,8 +2,11 @@
 import json
 import hashlib
 from contextvars import ContextVar
+import ipaddress
 import os
 from pathlib import Path
+import ssl
+import stat
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -25,11 +28,35 @@ def native_tool_context(next_call,session_id='',turn_id='',**kwargs):
 
 
 def call(path,body=None):
-    base=os.getenv('JARVIS_BACKEND_URL','http://127.0.0.1:8787')
-    url=urllib.parse.urlparse(base)
-    if url.scheme!='http' or url.hostname not in ('127.0.0.1','localhost','::1') or url.username or url.password:
-        return json.dumps({'error':'Only a loopback backend is permitted'})
     try:
+        ssl_context=None
+        lan_host=None
+        lan_port=None
+        if os.getenv('JARVIS_LAN_MODE')=='1':
+            raw_host=os.getenv('JARVIS_LAN_HOST','')
+            host=ipaddress.IPv4Address(raw_host)
+            if not any(host in ipaddress.ip_network(network) for network in ('10.0.0.0/8','172.16.0.0/12','192.168.0.0/16')):
+                return json.dumps({'error':'LAN backend host must be private HTTPS'})
+            port=int(os.getenv('JARVIS_PORT','8787'))
+            if not 1<=port<=65535:return json.dumps({'error':'LAN backend port is invalid'})
+            lan_host=str(host)
+            lan_port=port
+            base=f'https://{host}:{port}'
+            ca_file=Path(os.getenv('JARVIS_LAN_CA_CERT',''))
+            info=ca_file.lstat()
+            if not stat.S_ISREG(info.st_mode) or ca_file.is_symlink() or info.st_uid!=os.getuid() or info.st_mode & 0o022:
+                return json.dumps({'error':'Local LAN certificate authority file is unsafe'})
+            ssl_context=ssl.create_default_context(cafile=str(ca_file))
+            ssl_context.minimum_version=ssl.TLSVersion.TLSv1_2
+        else:
+            base=os.getenv('JARVIS_BACKEND_URL','http://127.0.0.1:8787')
+        url=urllib.parse.urlparse(base)
+        if url.username or url.password or url.query or url.fragment:
+            return json.dumps({'error':'Backend URL is invalid'})
+        if ssl_context is None and (url.scheme!='http' or url.hostname not in ('127.0.0.1','localhost','::1')):
+            return json.dumps({'error':'Only a loopback backend is permitted'})
+        if ssl_context is not None and (url.scheme!='https' or url.hostname!=lan_host or url.port!=lan_port):
+            return json.dumps({'error':'LAN backend URL is invalid'})
         token=os.environ.get('JARVIS_PLUGIN_TOKEN','')
         try:
             from agent.secret_scope import get_secret
@@ -43,7 +70,9 @@ def call(path,body=None):
         request=urllib.request.Request(base.rstrip('/')+'/api/internal'+path,data=json.dumps(body).encode() if body is not None else None,headers=headers)
         class NoRedirect(urllib.request.HTTPRedirectHandler):
             def redirect_request(self,*args,**kwargs): return None
-        opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect)
+        handlers=[urllib.request.ProxyHandler({}),NoRedirect]
+        if ssl_context is not None:handlers.append(urllib.request.HTTPSHandler(context=ssl_context))
+        opener=urllib.request.build_opener(*handlers)
         with opener.open(request,timeout=10) as response:
             return response.read(65536).decode()
     except urllib.error.HTTPError as exc:

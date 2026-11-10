@@ -29,6 +29,57 @@ npm start -- --stop
 
 The stop command verifies process identity and workspace before signalling it. It does not stop your separate global Hermes installation, Ollama service, or other desktop services. If a verified project gateway is already running, startup can reuse it; a borrowed gateway remains running when the launcher exits. An occupied application port produces an explicit error.
 
+## Open J.A.R.V.I.S. from another device on your home network
+
+Normal `npm start` stays private to this PC. To opt into a direct, encrypted LAN
+connection, use HTTPS LAN mode. It binds the production app to one private IPv4
+address assigned to this computer; it does not bind `0.0.0.0`.
+
+1. Find this PC's LAN address:
+
+   ```sh
+   ip -4 -o addr show scope global
+   ```
+
+   Choose the address on the Wi-Fi/Ethernet interface, such as `192.168.0.231`.
+   Do not choose Docker/VM bridges or a public address. The address can change
+   when your router renews DHCP.
+
+2. Start the app on that exact address:
+
+   ```sh
+   npm start -- --lan --lan-host 192.168.0.231
+   ```
+
+   Replace the example with the address you found. Keep this terminal open. The
+   launcher prints the HTTPS URL, public CA certificate path and SHA-256
+   fingerprint, plus the browser pairing token. `Ctrl+C` stops the app. To
+   return to local-only mode, stop it and run plain `npm start`.
+
+3. On the other device, copy only `.runtime/certs/lan-ca.crt` from this PC and
+   trust/import it as a certificate authority in that device's operating system
+   or browser. Verify its SHA-256 fingerprint against the one printed by the
+   launcher before trusting it. Then open the printed `https://<LAN-IP>:8787`
+   address and pair with the token shown in the J.A.R.V.I.S. terminal. Never copy
+   `lan-ca.key` to another device or share the pairing token in chat.
+
+   Certificate trust-store steps differ by operating system and browser. If the
+   CA is not trusted, the browser will show a certificate warning; do not bypass
+   that warning. HTTPS and a trusted certificate are also needed for remote
+   browser microphone access. In Firefox, open **Settings → Privacy & Security
+   → Certificates → View Certificates → Authorities → Import**, select
+   `lan-ca.crt`, and trust it to identify websites. Restart/reload Firefox, then
+   open the HTTPS address.
+
+Hermes and Ollama remain bound to loopback; the remote browser reaches them only
+through the authenticated J.A.R.V.I.S. backend. LAN mode checks the exact Host
+and Origin, uses Secure session cookies, and is unavailable with `--dev`. It
+does not change firewall rules. If another device cannot connect, allow inbound
+TCP port 8787 only from your trusted home subnet using your firewall's normal
+controls; do not forward the port on your router. The app does not configure a
+firewall, public URL, VPN or internet exposure. Choose a fixed DHCP reservation
+if the computer's LAN address changes often.
+
 ## Everyday use
 
 - Type an instruction and press **Enter**. Use **Shift+Enter** for another line.
