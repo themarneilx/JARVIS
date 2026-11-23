@@ -199,6 +199,14 @@ Strict whole-message greetings, attention cues and name questions have bounded p
 
 The supported Chat Completions system-message field adds a short application policy on top of native Hermes identity and memory. It does not replace SOUL.md. Live-diagnostic text is buffered until successful, relevant current-turn native tool results are available; no-tool, failed or unrelated claims are rejected and the session retired. For recognized live diagnostics, the backend obtains verified_summary objects with explicit source and coverage metadata from Hermes’ authenticated native tool transcript, verifies that they cover the requested measurements, and renders the bounded factual summaries. The same derivation is used on history reload, without a duplicate transcript store. This prevents the small model’s invented capacities or thermal judgments from becoming a system report. Other free-form reasoning still needs human judgment.
 
+The web backend distinguishes clear general questions and tutorials from requests
+for live readings. For a clear general turn, the Hermes plugin omits tool schemas
+from the model request. It also skips earlier diagnostic turns when the new
+question stands on its own. Follow-ups that refer to an earlier answer keep that
+context. Hermes retains the complete conversation for display and future turns.
+For a turn that asks only for diagnostics, the plugin offers the matching
+telemetry or process tools. The same local model still writes the answer.
+
 The foreground supervisor records Linux process start time and exact invocation, validates the dedicated HERMES_HOME and workspace, and sends explicit stop signals through a pidfd to prevent PID-reuse mistakes. Development backend startup does not require a production bundle; the launcher waits for Vite readiness before opening the browser.
 
 ## Immersive mode and map receipts

@@ -3,7 +3,7 @@ import json
 import httpx
 import pytest
 from app.config import Settings
-from app.hermes import HermesClient,HermesError,SAFE_TOOLS
+from app.hermes import HermesClient,HermesError,SAFE_TOOLS,live_request,online_kinds
 
 def safe_settings(tmp_path):
     home=tmp_path/'profile'; home.mkdir(exist_ok=True)
@@ -69,6 +69,70 @@ def test_stream_does_not_duplicate_history_or_expose_tool_arguments(tmp_path):
             assert 'NEVER-EXPOSE' not in json.dumps(result)
             assert any(r['type']=='tool' for r in result)
         finally:await client.close()
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize('prompt', [
+    'How do I check CPU temperature on Linux?',
+    'What is normal GPU temperature when gaming?',
+    'Explain the difference between RAM and disk usage.',
+    'Tell me a joke about a laptop health report.',
+    'Translate "check my CPU usage" into Cebuano.',
+    'What does this report say about the healthcare system?',
+])
+def test_general_questions_are_not_live_diagnostics(prompt):
+    assert not live_request(prompt)
+
+
+@pytest.mark.parametrize('prompt', [
+    'Check the system.', 'How is my laptop doing?', 'Why is my laptop slow?',
+    'What is my system status?', 'What is the status of my computer?',
+    'What is my CPU temperature?', 'GPU temperature?', 'How much RAM am I using?',
+    'Show me which apps are open.', 'Check CPU and GPU',
+    'What are the CPU and GPU temperatures?',
+    'Use your telemetry tool and give me a brief CPU, GPU temperature and battery report.',
+    'Identify yourself. Then call jarvis_telemetry and jarvis_processes.',
+])
+def test_live_diagnostics_still_require_readings(prompt):
+    assert live_request(prompt)
+
+
+def test_general_weather_question_is_not_a_forecast():
+    assert not online_kinds('Explain how weather forecasts work.')
+    assert online_kinds('What is the weather today?') == {'weather'}
+    assert online_kinds('Summarize the latest news about Cebu.') == {'news'}
+
+
+@pytest.mark.parametrize(('prompt','tool_guidance'), [
+    ('What is the capital of Japan?', 'Answer this turn without tools.'),
+    ('How do I check CPU temperature on Linux?', 'Answer this turn without tools.'),
+    ('Check the current GPU temperature', 'Tools for this turn: jarvis_telemetry.'),
+    ('Give me a system status report', 'Tools for this turn: jarvis_telemetry.'),
+    ('Check current CPU usage and running processes', 'Tools for this turn: jarvis_telemetry, jarvis_processes.'),
+    ('What is the weather today?', 'jarvis_online calls'),
+])
+def test_turn_instructions_match_the_question(tmp_path, prompt, tool_guidance):
+    def handler(request):
+        if request.method == 'GET':
+            return httpx.Response(200, json={'data': []})
+        instructions = json.loads(request.content)['messages'][0]['content']
+        assert tool_guidance in instructions
+        if tool_guidance == 'Answer this turn without tools.':
+            assert 'jarvis_telemetry' not in instructions
+        if tool_guidance.startswith('Tools for this turn:'):
+            assert 'jarvis_memory_propose' not in instructions
+        return httpx.Response(200, text='data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n')
+
+    async def run():
+        client = HermesClient(Settings(state_dir=tmp_path), httpx.MockTransport(handler))
+        try:
+            events = [event async for event in client.stream(prompt, 'session', 'request')]
+            assert events[-1]['type'] == 'done'
+        except HermesError as exc:
+            assert 'unverified' in str(exc)
+        finally:
+            await client.close()
+
     asyncio.run(run())
 
 

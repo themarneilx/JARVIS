@@ -12,7 +12,7 @@ import httpx
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'backend'))
 from app.config import Settings
-from app.hermes import HermesClient
+from app.hermes import HermesClient, LABELS
 from app.runtime import discover_runtime
 from app.models import ModelManager
 
@@ -60,7 +60,9 @@ async def main(probe=False):
             (ROOT / '.runtime/agent-check.json').write_text(json.dumps(report, indent=2))
             assert not any(e['type'] == 'error' for e in events), 'Agent reported an error'
             assert any(e['type'] == 'done' for e in events), 'No successful completion'
-            assert len({e['label'] for e in events if e['type']=='tool'})>=2, 'Both live tools must execute'
+            expected_tools = {LABELS['jarvis_telemetry'], LABELS['jarvis_processes']}
+            actual_tools = {e['label'] for e in events if e['type']=='tool'}
+            assert actual_tools == expected_tools, 'The diagnostic turn must execute both requested tools only'
             expected_model=report['application']['agent']['context']['model']
             assert any(m.get('context_length',0)>=64000 and m['name']==expected_model for m in report['ollama_after']['models']), 'Actual selected-model 64K allocation was not verified'
             session = next(e['session_id'] for e in events if e['type'] == 'session')

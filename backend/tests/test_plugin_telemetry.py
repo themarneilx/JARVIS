@@ -24,3 +24,50 @@ def test_summary_preserves_temperature_and_converts_reported_vram_units():
     assert '49.0°C' in summary and '3.00 of 6.00 GiB' in summary
     assert not any(word in summary for word in ('critical','healthy','high temperature'))
     assert 'unavailable' in plugin.verified_summary({})
+
+
+def test_general_browser_turn_omits_tools_from_provider_request():
+    request = {'messages': [
+        {'role': 'system', 'content': 'Jarvis profile\n\nAnswer this turn without tools.'},
+        {'role': 'user', 'content': 'What is the capital of Japan?'},
+    ], 'tools': [{'type': 'function', 'function': {'name': 'jarvis_telemetry'}}], 'tool_choice': 'auto'}
+    changed = plugin.focus_web_chat(request, platform='api_server')['request']
+    assert 'tools' not in changed and 'tool_choice' not in changed
+    assert changed['messages'] == request['messages']
+    assert 'tools' in request
+    assert plugin.focus_web_chat(request, platform='cli') is None
+    request['messages'][0]['content'] = 'Jarvis profile'
+    request['messages'][1]['content'] = 'Answer this turn without tools.'
+    assert plugin.focus_web_chat(request, platform='api_server') is None
+
+
+def test_standalone_question_omits_old_diagnostics_from_model_context():
+    system = {'role': 'system', 'content': 'Jarvis profile\n\nAnswer this turn without tools.'}
+    prior_chat = [{'role': 'user', 'content': 'Hello'}, {'role': 'assistant', 'content': 'Good evening.'}]
+    diagnostic = [
+        {'role': 'user', 'content': 'Check CPU and GPU'},
+        {'role': 'assistant', 'tool_calls': [{'function': {'name': 'jarvis_telemetry'}}]},
+        {'role': 'tool', 'content': 'Measured readings.'},
+        {'role': 'assistant', 'content': 'CPU usage is 20%.'},
+    ]
+    question = {'role': 'user', 'content': 'What is the capital of Japan?'}
+    request = {'messages': [system, *prior_chat, *diagnostic, question], 'tools': []}
+    focused = plugin.focus_web_chat(request, platform='api_server')['request']
+    assert focused['messages'] == [system, *prior_chat, question]
+    assert request['messages'] == [system, *prior_chat, *diagnostic, question]
+
+    follow_up = {'role': 'user', 'content': 'Why was it that high?'}
+    request['messages'][-1] = follow_up
+    focused = plugin.focus_web_chat(request, platform='api_server')['request']
+    assert focused['messages'] == [system, *prior_chat, *diagnostic, follow_up]
+
+
+def test_live_reading_provider_request_hides_unrelated_tools():
+    names = ['jarvis_telemetry', 'jarvis_processes', 'jarvis_memory_propose']
+    request = {
+        'messages': [{'role': 'system', 'content': 'Jarvis profile\n\nTools for this turn: jarvis_telemetry.'}],
+        'tools': [{'type': 'function', 'function': {'name': name}} for name in names],
+    }
+    focused = plugin.focus_web_chat(request, platform='api_server')['request']
+    assert [tool['function']['name'] for tool in focused['tools']] == ['jarvis_telemetry']
+    assert len(request['tools']) == 3
