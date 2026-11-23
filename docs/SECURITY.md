@@ -50,6 +50,14 @@ The app never selects a paid search provider automatically. Public information
 providers receive the requested search text or city coordinates; no microphone
 audio or curated memory corpus is sent to them.
 
+Chat answer mode is evaluated per turn. Local mode blocks the native plugin's
+internet lookups for that turn. Web mode requires the same internet consent and
+home-file privacy checks as Auto. General Web search uses the current browser
+question after credential redaction and length limits. The model's proposed
+search terms cannot add private conversation context to the provider query.
+If DDGS returns no usable results, Web mode can send the same query to the
+fixed English Wikipedia search endpoint under the same consent checks.
+
 Search snippets and headlines are untrusted text, not instructions or proof that
 full pages were read. Online answers require relevant native-tool receipts, and
 source links open HTTPS pages with noopener/noreferrer; images/raw HTML remain
@@ -137,6 +145,13 @@ review. HTTP validation details expose messages, not input values or credentials
 The dedicated Hermes profile must explicitly select only jarvis_desktop and no_mcp, have no cloud fallback providers, use the configured local Ollama endpoint and load only the reviewed plugin. The backend checks this profile in addition to API discovery because current Hermes discovery omits default MCP servers. Changes to that profile outside this application require restarting/reviewing the runtime; the preflight is defense in depth, not an OS sandbox against the local account owner deliberately replacing a running Hermes process.
 
 Launcher validation rejects global HERMES_HOME redirects and symlinked profile identity/configuration/memory. The supervisor prints the local pairing token in the foreground launch unless --no-token is supplied; the optional systemd example suppresses it and browser opening. Process shutdown checks a recorded PID's exact runtime module and workspace. Preflight requires an explicitly configured local 64K model default and refuses remote-model metadata. The Ollama metadata client is separate from the authenticated Hermes client, preventing upstream bearer reuse.
+
+Hermes maintenance opens a fixed Kitty command from a paired loopback browser
+with valid CSRF. The terminal displays `hermes update --plan` and requires a
+local `UPDATE` confirmation. The official updater operates on the account's
+shared Hermes installation. The project stops its own recorded processes first.
+The maintenance route does not accept command arguments and is outside the
+agent toolset.
 
 Runtime files live below private `.runtime/` and `hermes/runtime/` directories and are ignored by Git. Never commit pairing tokens, native memories, transcripts, recordings or generated speech. Raw audio uploads are not stored. TTS artifacts expire after five minutes. Native memory deletion removes current knowledge and prevents automatic exact reconstruction, but does not constitute forensic erasure of Hermes' own transcripts, backups, filesystem snapshots or disk blocks.
 

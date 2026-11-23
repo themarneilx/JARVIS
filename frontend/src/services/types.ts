@@ -46,6 +46,7 @@ export interface OnlineSettings {
 }
 export interface Status {
   online?: OnlineSettings;
+  hermes_update?: { available: boolean; version?: string; message?: string };
   agent: { connected: boolean; message?: string; safe_tools?: string[] };
   identity: { installed: boolean; matches_template: boolean };
   audio: {
@@ -101,6 +102,7 @@ export interface MemoryView {
   history: { action: string; fingerprint: string; at: number }[];
 }
 export interface Preferences {
+  answerMode: "auto" | "local" | "web";
   quality: "low" | "balanced" | "performance";
   reducedMotion: boolean;
   voice: boolean;

@@ -835,6 +835,7 @@ main {
   margin-top: 20px;
 }
 .composer textarea {
+  display: block;
   background: none;
   border: 0;
   resize: none;
@@ -843,6 +844,9 @@ main {
   min-height: 83px;
   max-height: 200px;
 }
+.composer textarea:focus-visible {
+  outline-offset: -2px;
+}
 .composer textarea::placeholder {
   color: #688a9b;
 }
@@ -850,21 +854,48 @@ main {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0 8px 8px 12px;
-  gap: 4px;
+  padding: 6px 8px 8px 12px;
+  gap: 8px;
+  border-top: 1px solid #203d4a;
 }
-.composer-foot > span {
-  font-size: 6px;
-  color: #658595;
+.composer-options > span {
+  display: block;
+  font-size: 9px;
+  color: #9bb8c5;
   letter-spacing: 0.2px;
 }
+.composer-mode {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 0 4px;
+}
+.composer-mode button {
+  min-height: 30px;
+  padding: 4px 8px;
+  font-size: 11px;
+}
+.composer-mode button[aria-pressed="true"] {
+  background: #173e4b;
+  border-color: #4d8d9a;
+  color: #b3eceb;
+}
+.composer-mode button:focus-visible {
+  outline-offset: 1px;
+}
 .send-button {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
   padding: 8px;
   background: #173e4b;
   border-color: #285a69;
   color: #8edee3;
   display: grid;
   place-items: center;
+}
+.composer .send-button:focus-visible {
+  outline-offset: 2px;
 }
 .message {
   padding: 17px 4px;

@@ -33,7 +33,21 @@ export function SettingsPanel({
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]),
     [minutes, setMinutes] = useState(60),
     [name, setName] = useState("System status report"),
-    [consent, setConsent] = useState(false);
+    [consent, setConsent] = useState(false),
+    [updateBusy, setUpdateBusy] = useState(false),
+    [updateMessage, setUpdateMessage] = useState("");
+  async function openHermesUpdater() {
+    setUpdateBusy(true);
+    setUpdateMessage("");
+    try {
+      await post("/maintenance/hermes-update", {});
+      setUpdateMessage("Review the plan in Kitty. Type UPDATE there to continue.");
+    } catch (error) {
+      fail(error instanceof Error ? error.message : "Could not open the Hermes updater.");
+    } finally {
+      setUpdateBusy(false);
+    }
+  }
   async function enumerate() {
     try {
       setDevices(await navigator.mediaDevices.enumerateDevices());
@@ -280,6 +294,17 @@ export function SettingsPanel({
                 : "Checkout unavailable"}
             </dd>
           </dl>
+          <p className="muted" id="hermes-update-scope">
+            {status?.hermes_update?.available
+              ? `Hermes ${status.hermes_update.version} is shared with your regular Hermes profile. Review and confirm the update in Kitty.`
+              : status?.hermes_update?.message ?? "Checking the Hermes installation…"}
+          </p>
+          <button type="button" aria-describedby="hermes-update-scope"
+            disabled={modelBusy || updateBusy || !status?.hermes_update?.available}
+            onClick={() => void openHermesUpdater()}>
+            {updateBusy ? "Opening Kitty…" : "Update Hermes"}
+          </button>
+          {updateMessage ? <p className="muted" role="status">{updateMessage}</p> : null}
         </section>
         <section className="panel">
           <div className="panel-title">

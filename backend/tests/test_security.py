@@ -72,6 +72,32 @@ async def test_csrf_required(client, auth):
     assert (await client.post('/api/information/settings',json={'enabled':True},headers={'authorization':'Bearer '+'p'*40})).status_code==403
     assert (await client.post('/api/actions', json={'kind':'workspace', 'target':'2'})).status_code == 403
 
+
+async def test_hermes_update_opens_fixed_terminal_only_for_paired_local_browser(client, auth, monkeypatch):
+    monkeypatch.setattr('app.main.update_command', lambda *_: ('0.22.6', ['kitty', 'fixed runner']))
+    calls = []
+    def launch(command):
+        calls.append(command)
+        return {'ok': True}
+    monkeypatch.setattr('app.main.execute_desktop', launch)
+    path = '/api/maintenance/hermes-update'
+    assert (await client.post(path, json={})).status_code == 403
+    assert (await client.post(path, headers=auth, json={'arguments': ['update']})).status_code == 422
+    assert calls == []
+    assert (await client.post(path, headers=auth, json={})).json() == {'status': 'terminal_opened'}
+    assert calls == [['kitty', 'fixed runner']]
+
+
+async def test_hermes_update_refuses_lan_even_with_valid_session(tmp_path, monkeypatch):
+    monkeypatch.setattr('app.main.execute_desktop', lambda _: pytest.fail('Launched from LAN'))
+    origin = 'https://192.168.40.25:8787'
+    settings = Settings(state_dir=tmp_path, login_token='l'*40, lan_mode=True, lan_host='192.168.40.25')
+    async with AsyncClient(transport=ASGITransport(app=create_app(settings)), base_url=origin) as client:
+        login = await client.post('/api/auth/login', json={'token': 'l'*40}, headers={'Origin': origin})
+        assert login.status_code == 200
+        headers = {'Origin': origin, 'X-CSRF-Token': login.json()['csrf']}
+        assert (await client.post('/api/maintenance/hermes-update', headers=headers, json={})).status_code == 403
+
 async def test_secrets_never_in_status(client, auth):
     r = await client.get('/api/status')
     assert r.status_code == 200

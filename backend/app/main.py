@@ -18,9 +18,10 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .config import Settings, ROOT
-from .permissions import ActionPolicy, ApprovalStore
+from .permissions import ActionPolicy, ApprovalStore, execute as execute_desktop
+from .hermes_maintenance import update_command
 from .telemetry import Telemetry
-from .hermes import HermesClient, HermesError,online_kinds
+from .hermes import HermesClient, HermesError,chat_online_kinds
 from .memory import MemoryManager
 from .audio import LocalSTT, JarvisTTS, validate_audio, speech_phrases
 from .monitoring import Monitoring
@@ -48,6 +49,10 @@ class Chat(StrictModel):
     text: str = Field(min_length=1,max_length=16000)
     session_id: str | None = None
     request_id: uuid.UUID = Field(default_factory=uuid.uuid4)
+    answer_mode: Literal['auto', 'local', 'web'] = 'auto'
+
+class OpenHermesUpdater(StrictModel):
+    pass
 
 class Action(StrictModel):
     kind: str = Field(max_length=40)
@@ -190,9 +195,16 @@ def create_app(settings=None, hermes=None, memory_bridge=None):
         db.execute('CREATE TABLE IF NOT EXISTS private_sessions (id TEXT PRIMARY KEY)')
         db.execute('CREATE TABLE IF NOT EXISTS desktop_native_turns (id TEXT PRIMARY KEY, created REAL)')
 
-    def online_permission():
+    def online_permission(kind):
         if any(state.get('private_context') for state in active.values()):
             raise HTTPException(403,'Internet lookup is paused for this conversation because it contains home-file data. Start a new conversation before online searches.')
+        if any(state['answer_mode'] == 'local' for state in active.values()):
+            raise HTTPException(403, 'This chat turn is in Local mode. Choose Web or Auto for internet lookups.')
+        for state in active.values():
+            if state['answer_mode'] == 'web':
+                if state['cancel'].is_set() or kind not in state['online_kinds']:
+                    raise HTTPException(403, 'This chat turn does not authorize that internet lookup.')
+                return state.get('search_query')
 
     def note_private_context():
         with sqlite3.connect(conversation_db) as db:
@@ -349,8 +361,24 @@ def create_app(settings=None, hermes=None, memory_bridge=None):
         sessions.pop(owner,None)
         response=JSONResponse({'ok':True}); response.delete_cookie('jarvis_session'); return response
 
+    def local_maintenance(request: Request):
+        return not settings.lan_mode and request.client is not None and request.client.host in ('127.0.0.1', '::1')
+
+    @app.post('/api/maintenance/hermes-update')
+    async def open_hermes_updater(body: OpenHermesUpdater, request: Request):
+        if not local_maintenance(request):
+            raise HTTPException(403, 'Open Jarvis on this PC using localhost to update Hermes.')
+        if chat_lock.locked():
+            raise HTTPException(409, 'Finish the current request before opening the Hermes updater.')
+        async with chat_lock:
+            _, command = update_command(ROOT, settings.hermes_source, settings.hermes_python)
+            result = await asyncio.to_thread(execute_desktop, command)
+        if not result['ok']:
+            raise HTTPException(503, 'Kitty did not open. Run hermes update --plan in your own terminal to review the update.')
+        return {'status': 'terminal_opened'}
+
     @app.get('/api/status')
-    async def status():
+    async def status(request: Request):
         try: result=await agent.preflight()
         except HermesError as exc: result={'connected':False,'message':str(exc)}
         identity=settings.hermes_home/'SOUL.md'
@@ -359,7 +387,14 @@ def create_app(settings=None, hermes=None, memory_bridge=None):
                'stt_model':settings.stt_model,'stt_provider':settings.stt_provider,
                'stt_device':'cpu','stt_ready':stt.ready and stt.proc is not None and stt.proc.returncode is None,
                'device':tts.device,'tts_ready':tts.view()['ready']}
-        return {'agent':result,'identity':{'installed':identity.is_file(),'matches_template':identity.is_file() and template.is_file() and identity.read_bytes()==template.read_bytes()},'audio':audio,'memory_epoch':memory.epoch,'approved_services':settings.services,'online':information.config.model_dump()}
+        maintenance = {'available': False, 'message': 'Open Jarvis on this PC using localhost to update Hermes.'}
+        if local_maintenance(request):
+            try:
+                version, _ = update_command(ROOT, settings.hermes_source, settings.hermes_python)
+                maintenance = {'available': True, 'version': version}
+            except (ValueError, OSError) as exc:
+                maintenance['message'] = str(exc) if isinstance(exc, ValueError) else 'The local Hermes installation could not be inspected.'
+        return {'agent':result,'identity':{'installed':identity.is_file(),'matches_template':identity.is_file() and template.is_file() and identity.read_bytes()==template.read_bytes()},'audio':audio,'memory_epoch':memory.epoch,'approved_services':settings.services,'online':information.config.model_dump(),'hermes_update':maintenance}
 
     @app.get('/api/audio/startup')
     async def startup_audio():
@@ -389,7 +424,7 @@ def create_app(settings=None, hermes=None, memory_bridge=None):
     @app.post('/api/information/lookup')
     @app.post('/api/internal/online/lookup')
     async def lookup_information(body:Lookup,request:Request):
-        if request.url.path.startswith('/api/internal/') and body.kind not in ('time','location'):online_permission()
+        if request.url.path.startswith('/api/internal/') and body.kind not in ('time','location'):online_permission(body.kind)
         return await maps.lookup(body) if body.kind in ('map','directions') else await information.lookup(body)
 
     @app.get('/api/information/views/{receipt}')
@@ -403,8 +438,16 @@ def create_app(settings=None, hermes=None, memory_bridge=None):
 
     @app.get('/api/internal/online/search-permit')
     async def search_permission():
-        online_permission()
-        return information.permission()
+        query = online_permission('search')
+        permission = information.permission()
+        return {**permission, 'query': query} if query else permission
+
+    @app.get('/api/internal/online/wiki-fallback')
+    async def search_wikipedia():
+        query = online_permission('search')
+        if not query:
+            raise HTTPException(403, 'Wikipedia fallback requires an active browser Web search.')
+        return await information.wikipedia_search(query)
 
     @app.get('/api/applications')
     @app.get('/api/internal/applications')
@@ -476,6 +519,11 @@ def create_app(settings=None, hermes=None, memory_bridge=None):
     @app.post('/api/chat')
     async def chat(body:Chat,request:Request):
         if not body.text.strip(): raise HTTPException(400,'Message is empty')
+        online = chat_online_kinds(body.text, body.answer_mode)
+        if body.answer_mode == 'local' and chat_online_kinds(body.text) - {'time', 'location'}:
+            raise HTTPException(403, 'This question needs internet data. Choose Auto or Web to look it up.')
+        if body.answer_mode == 'web' and online - {'time', 'location'} and not information.config.enabled:
+            raise HTTPException(403, 'Enable internet lookups in Settings → Location & internet to use Web mode.')
         if shortcut_audio_busy(): raise HTTPException(409,'Stop or finish the shortcut announcement before starting an agent turn')
         if body.session_id:
             try: uuid.UUID(body.session_id)
@@ -491,7 +539,7 @@ def create_app(settings=None, hermes=None, memory_bridge=None):
                     row=db.execute('SELECT epoch,retired FROM sessions WHERE id=?',(identifier,)).fetchone()
                     if not row or row[0]!=generation or row[1]:
                         raise HTTPException(409,'Conversation is unknown, retired, or predates a memory change. Start a new conversation.')
-                    if online_kinds(body.text)-{'time','location'} and db.execute('SELECT 1 FROM private_sessions WHERE id=?',(identifier,)).fetchone():
+                    if online-{'time','location'} and db.execute('SELECT 1 FROM private_sessions WHERE id=?',(identifier,)).fetchone():
                         raise HTTPException(403,'Internet lookup is paused for this conversation because it contains home-file data. Start a new conversation before online searches.')
                 else:
                     db.execute('INSERT INTO sessions(id,epoch) VALUES (?,?)',(identifier,generation))
@@ -514,13 +562,17 @@ def create_app(settings=None, hermes=None, memory_bridge=None):
             with sqlite3.connect(conversation_db) as db:
                 private_context=bool(db.execute('SELECT 1 FROM private_sessions WHERE id=?',(identifier,)).fetchone())
             state={'run_id':None,'cancel':cancellation,'closed':asyncio.Event(),'stop_confirmed':False,'private_context':private_context,'native_turn':None,'prompt_hash':hashlib.sha256(body.text.strip().encode()).hexdigest()}
+            state.update(answer_mode=body.answer_mode, online_kinds=online)
+            if body.answer_mode == 'web' and online == {'search'}:
+                state['search_query'] = redact(body.text.strip())[:500]
             active[identifier]=state
             def encode(item): return 'data: '+json.dumps(item)+'\n\n'
             try:
                 yield encode({'type':'session','session_id':identifier,'epoch':generation})
                 yield encode({'type':'state','state':'thinking'})
-                if online_kinds(body.text) & {'map','directions'}:yield encode({'type':'map_locating'})
-                async for item in agent.stream(body.text.strip(),identifier,str(body.request_id)):
+                if online & {'map','directions'}:yield encode({'type':'map_locating'})
+                options = {} if body.answer_mode == 'auto' else {'answer_mode': body.answer_mode}
+                async for item in agent.stream(body.text.strip(),identifier,str(body.request_id),**options):
                     if item['type']=='run': state['run_id']=item['run_id']
                     if await request.is_disconnected(): break
                     if item['type']=='done': finished=True

@@ -580,6 +580,7 @@ export default function App() {
             event("DONE");
           }
         },
+        preferences.answerMode,
       );
       if (response.current && preferences.voice && preferences.autoSpeak)
         void voice.speak(response.current);
@@ -974,6 +975,9 @@ export default function App() {
               <div id="conversation-drawer" className="conversation-drawer" hidden={immersive && !chatExpanded}>
               <ChatPanel
                 timezone={status?.online?.timezone??'Asia/Manila'}
+                answerMode={preferences.answerMode}
+                changeAnswerMode={(answerMode) => setPreferences(current => ({ ...current, answerMode }))}
+                internetEnabled={status?.online?.enabled === true}
                 messages={messages}
                 input={input}
                 setInput={setInput}

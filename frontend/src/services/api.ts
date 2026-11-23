@@ -46,6 +46,7 @@ export async function chat(
   epoch: number,
   signal: AbortSignal,
   onEvent: (event: StreamEvent) => void,
+  answerMode: "auto" | "local" | "web" = "auto",
 ) {
   const response = await fetch("/api/chat", {
     method: "POST",
@@ -58,6 +59,7 @@ export async function chat(
       text,
       session_id: session,
       request_id: crypto.randomUUID(),
+      ...(answerMode === "auto" ? {} : { answer_mode: answerMode }),
     }),
     signal,
     credentials: "same-origin",

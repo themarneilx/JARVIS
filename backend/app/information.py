@@ -5,7 +5,7 @@ import html,json,math,os,re,secrets,time
 import xml.etree.ElementTree as ET
 from email.utils import parsedate_to_datetime
 from typing import Literal
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 from zoneinfo import ZoneInfo,ZoneInfoNotFoundError
 import httpx
 from pydantic import BaseModel,ConfigDict,Field,field_validator,model_validator
@@ -104,7 +104,7 @@ class Information:
     async def fetch(self,provider,path='',params=None):
         self.permission()
         generation=self.generation
-        hosts={'weather':'https://api.open-meteo.com/v1/forecast','geocode':'https://geocoding-api.open-meteo.com/v1/search','fx':'https://api.frankfurter.dev/v2/rate/','stocks':'https://query1.finance.yahoo.com/v8/finance/chart/','news':'https://news.google.com/rss/search','map_search':'https://nominatim.openstreetmap.org/search','route':'https://router.project-osrm.org/route/v1/driving/'}
+        hosts={'weather':'https://api.open-meteo.com/v1/forecast','geocode':'https://geocoding-api.open-meteo.com/v1/search','fx':'https://api.frankfurter.dev/v2/rate/','stocks':'https://query1.finance.yahoo.com/v8/finance/chart/','news':'https://news.google.com/rss/search','map_search':'https://nominatim.openstreetmap.org/search','route':'https://router.project-osrm.org/route/v1/driving/','wiki_search':'https://en.wikipedia.org/w/rest.php/v1/search/page'}
         valid_path = re.fullmatch(r'-?\d{1,3}\.\d{6},-?\d{1,2}\.\d{6};-?\d{1,3}\.\d{6},-?\d{1,2}\.\d{6}',path) if provider=='route' else (not path or re.fullmatch(r'[A-Za-z0-9.^=/\-]{1,30}',path))
         if provider not in hosts or not valid_path or '..' in path:
             raise ValueError('Unsupported provider request')
@@ -133,6 +133,27 @@ class Information:
             try:places.append(Place(**{key:item.get(key) for key in Place.model_fields}).model_dump())
             except ValueError:continue
         return places
+
+    async def wikipedia_search(self, query):
+        body = await self.fetch('wiki_search', params={'q': query, 'limit': 3})
+        try:
+            pages = json.loads(body)['pages']
+            results = [
+                {'title': clean(page['title'], 120),
+                 'url': 'https://en.wikipedia.org/wiki/' + quote(page['key'], safe=''),
+                 'description': clean(page.get('excerpt') or page.get('description'), 300)}
+                for page in pages[:3]
+                if page.get('key') and page.get('title') and (page.get('excerpt') or page.get('description'))
+            ]
+        except (ValueError, KeyError, TypeError, AttributeError) as exc:
+            raise ValueError('Wikipedia returned an unreadable search response.') from exc
+        if not results:
+            raise ValueError('Wikipedia returned no usable search excerpts.')
+        excerpts = ' '.join(f"{item['title']}: {item['description']}" for item in results)
+        return {'source': 'jarvis_online/v1', 'covered': ['search'], 'browser_query': True,
+                'provider': 'Wikipedia search fallback', 'results': results,
+                'verified_summary': 'Wikipedia search excerpts: ' + excerpts,
+                'fetched_at': datetime.now(ZoneInfo('UTC')).isoformat()}
 
     def presentation(self,receipt):
         self.permission()

@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import { Icon } from "../components/Icon";
-import type { Message } from "../services/types";
+import type { Message, Preferences } from "../services/types";
+
+const answerModes = [["auto", "Auto"], ["local", "Local"], ["web", "Web"]] as const;
+
 export function ChatPanel({
   messages,
   input,
@@ -14,6 +17,9 @@ export function ChatPanel({
   replay,
   newSession,
   timezone='Asia/Manila',
+  answerMode,
+  changeAnswerMode,
+  internetEnabled,
 }: {
   messages: Message[];
   input: string;
@@ -26,6 +32,9 @@ export function ChatPanel({
   replay: (text: string) => void;
   newSession: () => void;
   timezone?: string;
+  answerMode: Preferences["answerMode"];
+  changeAnswerMode: (mode: Preferences["answerMode"]) => void;
+  internetEnabled: boolean;
 }) {
   const log = useRef<HTMLDivElement>(null);
   const followLatest = useRef(true);
@@ -177,7 +186,22 @@ export function ChatPanel({
           }}
         />
         <div className="composer-foot">
-          <span>{announcementBlocked ? "SHORTCUT ANNOUNCEMENT IN PROGRESS" : "ENTER TO SEND · SHIFT + ENTER FOR NEW LINE"}</span>
+          <div className="composer-options">
+            <div className="composer-mode" role="group" aria-label="Answer mode" aria-describedby="answer-mode-help">
+              {answerModes.map(([value, label]) => (
+                <button key={value} type="button" aria-pressed={answerMode === value}
+                  disabled={busy || (value === "web" && !internetEnabled)}
+                  onClick={() => changeAnswerMode(value)}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <span id="answer-mode-help">
+              {announcementBlocked ? "Shortcut announcement in progress" : answerMode === "web"
+                ? "Public questions go to web search" : !internetEnabled
+                  ? "Enable internet lookups in Settings for Web mode" : "Enter to send · Shift+Enter for a new line"}
+            </span>
+          </div>
           {busy ? (
             <button
               type="button"

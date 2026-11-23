@@ -83,6 +83,7 @@ if the computer's LAN address changes often.
 ## Everyday use
 
 - Type an instruction and press **Enter**. Use **Shift+Enter** for another line.
+- Use **Answer mode** beside Send. **Auto** looks up live data when the question calls for it. **Local** uses the model and local tools without internet lookups. **Web** searches public sources before answering general questions and shows source links. When Hermes search returns no results, Web mode tries Wikipedia excerpts. Enable web lookups in **Settings → Location & internet** first. The mode is saved in this browser.
 - Completed replies **speak automatically**. Settings can disable voice or automatic speech; stop and replay remain available.
 - Voice pace defaults to `0.73`, slightly slower than the original `0.8`. Set `JARVIS_TTS_SPEED` in `.env` for another pace; restart the launcher to apply it.
 - Choose **Settings → Voice output → Speech processing device → CPU / NVIDIA GPU**. The device choice is saved on this machine and shared by paired browsers. Switching stops speech and prepares the selected device when voice is enabled. Use **Test voice** and **Stop voice** to check it. The original voice and pace are preserved.
@@ -95,6 +96,15 @@ if the computer's LAN address changes often.
 - CPU and GPU temperatures appear side by side in System Overview and System. CPU readings use a recognized CPU package/core sensor; unrelated ACPI or drive temperatures are not substituted.
 
 The core's waveform and frequency bars use real Web Audio analyser samples. Core brightness and size also follow measured amplitude. Silence does not generate invented speech pulses. Reduced motion, capped graphics presets, hidden-tab pausing and a 2D WebGL fallback are supported.
+
+### Update Hermes from Jarvis
+
+On the Jarvis PC, open **Settings → Connections → Update Hermes**. Kitty displays
+Hermes's update plan. Type `UPDATE` there to stop Jarvis and run the official
+updater. When it finishes, the terminal offers to start Jarvis again. The update
+changes the Hermes installation used by both Jarvis and the regular Hermes
+profile. Hermes can restart its own gateway services. Jarvis keeps its separate
+profile, and the launcher checks compatibility when it starts again.
 
 ## Immersive Jarvis, maps and welcome audio
 

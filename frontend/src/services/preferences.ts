@@ -5,6 +5,7 @@ export function readPreferences(
   reducedMotion = false,
 ): Preferences {
   const defaults: Preferences = {
+    answerMode: "auto",
     quality: "balanced",
     reducedMotion,
     voice: true,
@@ -27,6 +28,7 @@ export function readPreferences(
       return {
         ...defaults,
         ...saved,
+        answerMode: saved.answerMode === "local" || saved.answerMode === "web" ? saved.answerMode : "auto",
         backgroundWake: saved.backgroundWake === true,
         immersiveMicMode: saved.immersiveMicMode === 'wake' ? 'wake' : 'always',
       };

@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import select
 import signal
 
 
@@ -47,15 +48,20 @@ def validate_process(record,root,proc_root=Path('/proc')):
     if record['argv']!=expected:raise ValueError('Unrecognized project process invocation')
 
 
-def stop_recorded(root,kind):
+def stop_recorded(root,kind,*,wait_seconds=None):
     path=root/'.runtime'/f'{kind}.process.json'
-    if not path.exists():return
-    record=json.loads(path.read_text())
+    try:record=json.loads(path.read_text())
+    except FileNotFoundError:return
     descriptor=None
     try:
         descriptor=os.pidfd_open(record['pid'])
         validate_process(record,root)
         signal.pidfd_send_signal(descriptor,signal.SIGTERM)
+        if wait_seconds is not None:
+            poller=select.poll()
+            poller.register(descriptor,select.POLLIN)
+            if not poller.poll(wait_seconds*1000):
+                raise RuntimeError(f'Jarvis {kind} did not stop in time.')
     except ProcessLookupError:pass
     except FileNotFoundError:pass
     finally:

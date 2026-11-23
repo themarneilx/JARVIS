@@ -44,11 +44,15 @@ def focus_web_chat(request, platform='', **kwargs):
         tool_options = {'tools', 'tool_choice', 'parallel_tool_calls'}
         focused = {key: value for key, value in request.items() if key not in tool_options}
         return {'request': {**focused, 'messages': without_old_diagnostics(messages)}}
-    selected = re.search(r'\n\nTools for this turn: (jarvis_telemetry|jarvis_processes|jarvis_telemetry, jarvis_processes)\.\Z', content)
+    selected = re.search(r'\n\nTools for this turn: (jarvis_telemetry|jarvis_processes|jarvis_telemetry, jarvis_processes|jarvis_online)\.\Z', content)
     tools = request.get('tools')
     if selected and isinstance(tools, list):
         names = set(selected[1].split(', '))
-        return {'request': {**request, 'tools': [tool for tool in tools if tool.get('function', {}).get('name') in names]}}
+        tools = [tool for tool in tools if tool.get('function', {}).get('name') in names]
+        if names == {'jarvis_online'} and tools:
+            tools = [{'type': 'function', 'function': schema('jarvis_online', 'Search for public web sources about the current question.',
+                     {'kind': {'type': 'string', 'enum': ['search']}}, ['kind'])}]
+        return {'request': {**request, 'tools': tools}}
     return None
 
 
@@ -224,22 +228,26 @@ def read_processes(args):
 
 def online_lookup(args):
     if args.get('kind')!='search':return call('/online/lookup',args)
-    if json.loads(call('/online/search-permit')).get('enabled') is not True:
+    permit = json.loads(call('/online/search-permit'))
+    if permit.get('enabled') is not True:
+        if permit.get('error'):return json.dumps(permit)
         return json.dumps({'error':'Internet lookups are disabled or the backend is unavailable. Check Settings.'})
-    query=args.get('query','')
+    query=permit.get('query', args.get('query',''))
     if not isinstance(query,str) or not 1<=len(query.strip())<=500:return json.dumps({'error':'Provide a search query of 1 to 500 characters'})
     from plugins.web.ddgs.provider import DDGSWebSearchProvider
     data=DDGSWebSearchProvider().search(query,limit=3)
-    if not data.get('success'):return json.dumps({'error':'Native Hermes DDGS search failed; try again later. No paid provider was selected.'})
+    if not data.get('success'):
+        return call('/online/wiki-fallback') if 'query' in permit else json.dumps({'error':'Native Hermes DDGS search failed; try again later. No paid provider was selected.'})
     def text(value,limit):return ' '.join(re.sub(r'<[^>]*>|[\x00-\x1f\x7f]',' ',str(value or '')).split())[:limit]
     rows=[]
     for item in data.get('data',{}).get('web',[])[:3]:
         link=str(item.get('url',''));parsed=urllib.parse.urlparse(link)
         if parsed.scheme!='https' or not parsed.hostname or parsed.username or parsed.password or len(link)>2000 or re.search(r'[\s\x00-\x1f\x7f<>\\]',link):continue
         rows.append({'title':text(item.get('title'),120),'url':link,'description':text(item.get('description'),300)})
-    if not rows:return json.dumps({'error':'Native Hermes DDGS returned no usable HTTPS results.'})
+    if not rows:
+        return call('/online/wiki-fallback') if 'query' in permit else json.dumps({'error':'Native Hermes DDGS returned no usable HTTPS results.'})
     summary='Web search snippets from Hermes DDGS: '+ ' '.join(f"{i+1}. {row['title']}: {row['description']}" for i,row in enumerate(rows))+' These are search snippets; the full pages have not been read.'
-    return json.dumps({'source':'jarvis_online/v1','covered':['search'],'provider':'Hermes DDGS','verified_summary':summary[:1800],'results':rows,'fetched_at':datetime.now(timezone.utc).isoformat()})
+    return json.dumps({'source':'jarvis_online/v1','covered':['search'],'provider':'Hermes DDGS','verified_summary':summary[:1800],'results':rows,'browser_query':'query' in permit,'fetched_at':datetime.now(timezone.utc).isoformat()})
 
 
 def propose_memory(args):

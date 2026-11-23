@@ -34,7 +34,7 @@ export function LocationSettings({ changed }: { changed: () => void }) {
     <div className="panel-title"><h2>Location & internet</h2></div>
     {!settings?<p role="status">Loading your defaults…</p>:<>
       <label className="check-label"><input type="checkbox" checked={settings.enabled} disabled={busy} onChange={e=>void save({...settings,enabled:e.target.checked})}/>Enable internet information lookups</label>
-      <p className="muted">Inference stays local. Searches go to Hermes DDGS, news to Google News, weather to Open-Meteo, rates to Frankfurter quotes to Yahoo Finance, and maps/place searches/driving routes to OpenStreetMap and OSRM. Map tiles load directly in the browser while the map is open. These providers receive the query or city coordinates needed for your request.</p>
+      <p className="muted">Inference stays local. Web mode uses Hermes search and can fall back to Wikipedia excerpts. Other lookups use Google News, Open-Meteo, Frankfurter, Yahoo Finance, OpenStreetMap and OSRM. These providers receive the query or coordinates needed for your request. Map tiles load while the map is open.</p>
       <p>Saved city: <strong>{settings.location?`${settings.location.name}, ${settings.location.country}`:'Not set'}</strong></p>
       <form onSubmit={e=>{e.preventDefault();void search();}}>
         <label>Find city or town<input value={query} onChange={e=>setQuery(e.target.value)} maxLength={100} placeholder="City or town name" disabled={busy||!settings.enabled}/></label>
